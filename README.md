@@ -1,5 +1,11 @@
 # notioncli
 
+[![npm version](https://img.shields.io/npm/v/notioncli.svg)](https://www.npmjs.com/package/notioncli)
+[![CI](https://github.com/JordanCoin/notioncli/actions/workflows/ci.yml/badge.svg)](https://github.com/JordanCoin/notioncli/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/JordanCoin/notioncli/branch/main/graph/badge.svg)](https://codecov.io/gh/JordanCoin/notioncli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
+
 A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.
 
 **No more copy-pasting UUIDs.** Set up aliases once, then just type `notion query tasks` or `notion add projects --prop "Name=Ship it"`.

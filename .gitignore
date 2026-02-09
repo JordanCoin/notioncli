@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.*
 *.log
+coverage/
 
 # Config files contain API keys — don't commit
 config.json
