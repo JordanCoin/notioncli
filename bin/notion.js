@@ -365,18 +365,51 @@ program
         return;
       }
 
-      console.log(`Found ${res.results.length} database${res.results.length !== 1 ? 's' : ''}:`);
-      console.log('');
+      if (!config.aliases) config.aliases = {};
+
+      console.log(`Found ${res.results.length} database${res.results.length !== 1 ? 's' : ''}:\n`);
+
+      const added = [];
       for (const db of res.results) {
-        const title = richTextToPlain(db.title) || '(untitled)';
-        const id = db.id;
-        // Suggest a slug-friendly alias
-        const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
-        console.log(`  ${title}`);
-        console.log(`    ID: ${id}`);
-        console.log(`    Add alias: notion alias add ${slug || 'mydb'} ${id}`);
-        console.log('');
+        const title = richTextToPlain(db.title) || '';
+        const dsId = db.id;
+        const dbId = db.database_id || dsId;
+
+        // Auto-generate a slug from the title
+        let slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+        if (!slug) slug = `db-${dsId.slice(0, 8)}`;
+
+        // Avoid collisions — append a number if needed
+        let finalSlug = slug;
+        let counter = 2;
+        while (config.aliases[finalSlug] && config.aliases[finalSlug].data_source_id !== dsId) {
+          finalSlug = `${slug}-${counter}`;
+          counter++;
+        }
+
+        config.aliases[finalSlug] = {
+          database_id: dbId,
+          data_source_id: dsId,
+        };
+
+        console.log(`  ✅ ${finalSlug.padEnd(25)} → ${title || '(untitled)'}`);
+        added.push(finalSlug);
       }
+
+      saveConfig(config);
+      console.log('');
+      console.log(`${added.length} alias${added.length !== 1 ? 'es' : ''} saved automatically.`);
+      console.log('');
+      console.log('Ready! Try:');
+      if (added.length > 0) {
+        console.log(`  notion query ${added[0]}`);
+        console.log(`  notion add ${added[0]} --prop "Name=Hello World"`);
+      }
+      console.log('');
+      console.log('Manage aliases:');
+      console.log('  notion alias list              — see all aliases');
+      console.log('  notion alias rename <old> <new> — rename an alias');
+      console.log('  notion alias remove <name>     — remove an alias');
     } catch (err) {
       console.error(`Failed to discover databases: ${err.message}`);
       console.error('Your API key was saved. You can add databases manually with: notion alias add <name> <id>');
@@ -483,6 +516,29 @@ alias
     delete config.aliases[name];
     saveConfig(config);
     console.log(`✅ Removed alias "${name}"`);
+  });
+
+alias
+  .command('rename <old-name> <new-name>')
+  .description('Rename a database alias')
+  .action((oldName, newName) => {
+    const config = loadConfig();
+    if (!config.aliases || !config.aliases[oldName]) {
+      console.error(`Alias "${oldName}" not found.`);
+      const names = config.aliases ? Object.keys(config.aliases) : [];
+      if (names.length > 0) {
+        console.error(`Available: ${names.join(', ')}`);
+      }
+      process.exit(1);
+    }
+    if (config.aliases[newName]) {
+      console.error(`Alias "${newName}" already exists. Remove it first or pick a different name.`);
+      process.exit(1);
+    }
+    config.aliases[newName] = config.aliases[oldName];
+    delete config.aliases[oldName];
+    saveConfig(config);
+    console.log(`✅ Renamed "${oldName}" → "${newName}"`);
   });
 
 // ─── search ────────────────────────────────────────────────────────────────────

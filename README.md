@@ -11,19 +11,20 @@ npm install -g notioncli
 ## Quick Start
 
 ```bash
-# 1. Set your API key
+# 1. One command to set up
 notion init --key ntn_your_api_key_here
 
-# 2. Add aliases for your databases
-notion alias add projects a1b2c3d4-e5f6-7890-abcd-ef1234567890
-notion alias add tasks f9e8d7c6-b5a4-3210-fedc-ba0987654321
+# That's it. Aliases are created automatically:
+#   ✅ projects     → Project Tracker
+#   ✅ reading-list → Reading List
+#   ✅ meetings     → Meeting Notes
 
-# 3. Start using them
+# 2. Start using them immediately
 notion query projects
-notion add tasks --prop "Name=Buy milk" --prop "Status=Todo"
+notion add projects --prop "Name=Ship it" --prop "Status=Todo"
 ```
 
-That's it. You'll never type a database ID again.
+Zero UUIDs. One command. You're ready to go.
 
 ---
 
@@ -47,37 +48,30 @@ In Notion, open each database you want to access:
 notion init --key ntn_your_api_key_here
 ```
 
-This saves your key and discovers all shared databases:
+This saves your key, discovers all shared databases, and **creates aliases automatically**:
 
 ```
 ✅ API key saved to ~/.config/notioncli/config.json
 
 Found 3 databases:
 
-  Project Tracker
-    ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-    Add alias: notion alias add project-tracker a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  ✅ project-tracker        → Project Tracker
+  ✅ reading-list           → Reading List
+  ✅ meeting-notes          → Meeting Notes
 
-  Reading List
-    ID: f9e8d7c6-b5a4-3210-fedc-ba0987654321
-    Add alias: notion alias add reading-list f9e8d7c6-b5a4-3210-fedc-ba0987654321
+3 aliases saved automatically.
 
-  Meeting Notes
-    ID: 11223344-5566-7788-99aa-bbccddeeff00
-    Add alias: notion alias add meeting-notes 11223344-5566-7788-99aa-bbccddeeff00
+Ready! Try:
+  notion query project-tracker
+  notion add project-tracker --prop "Name=Hello World"
 ```
 
-### 4. Add Your Aliases
-
-Just copy-paste the suggested commands:
+That's it — no IDs, no extra steps. If you want shorter names:
 
 ```bash
-notion alias add projects a1b2c3d4-e5f6-7890-abcd-ef1234567890
-notion alias add reads f9e8d7c6-b5a4-3210-fedc-ba0987654321
-notion alias add meetings 11223344-5566-7788-99aa-bbccddeeff00
+notion alias rename project-tracker projects
+notion alias rename reading-list reads
 ```
-
-Done. Now use `projects`, `reads`, `meetings` everywhere instead of IDs.
 
 > **Alternative:** Skip `init` and set an environment variable:
 > ```bash
@@ -196,11 +190,16 @@ f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ data_source │ Meetings DB    │ http
 
 ### `notion alias` — Manage Aliases
 
+Aliases are created automatically by `notion init`, but you can manage them:
+
 ```bash
 # See your aliases
 notion alias list
 
-# Add one (auto-discovers the right IDs)
+# Rename one
+notion alias rename project-tracker projects
+
+# Add one manually (auto-discovers the right IDs)
 notion alias add tasks a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 # Remove one
