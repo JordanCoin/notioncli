@@ -103,6 +103,17 @@ async function resolvePageId(aliasOrId, filterStr) {
     }
     return { pageId: res.results[0].id, dbIds };
   }
+  // Check if it looks like a UUID — if not, it's probably a typo'd alias
+  if (!/^[0-9a-f-]{32,36}$/i.test(aliasOrId)) {
+    const aliasNames = config.aliases ? Object.keys(config.aliases) : [];
+    console.error(`Unknown alias: "${aliasOrId}"`);
+    if (aliasNames.length > 0) {
+      console.error(`Available aliases: ${aliasNames.join(', ')}`);
+    } else {
+      console.error('No aliases configured. Run: notion init --key <your-api-key>');
+    }
+    process.exit(1);
+  }
   // Treat as raw page ID
   return { pageId: aliasOrId, dbIds: null };
 }
