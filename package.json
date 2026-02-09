@@ -7,7 +7,9 @@
     "notion": "./bin/notion.js"
   },
   "scripts": {
-    "test": "node bin/notion.js --help"
+    "test": "node --test test/unit.test.js test/mock.test.js",
+    "test:live": "node --test test/integration.test.js",
+    "test:all": "node --test test/"
   },
   "repository": {
     "type": "git",
