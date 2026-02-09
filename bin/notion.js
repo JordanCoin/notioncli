@@ -316,6 +316,61 @@ async function buildFilter(dbIds, filterStr) {
   }
 }
 
+// ─── Output formatters ─────────────────────────────────────────────────────────
+
+/** Format rows as CSV string */
+function formatCsv(rows, columns) {
+  if (!rows || rows.length === 0) return '(no results)';
+  const escape = (val) => {
+    const s = String(val ?? '');
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  };
+  const lines = [columns.map(escape).join(',')];
+  for (const row of rows) {
+    lines.push(columns.map(c => escape(row[c])).join(','));
+  }
+  return lines.join('\n');
+}
+
+/** Format rows as YAML string */
+function formatYaml(rows, columns) {
+  if (!rows || rows.length === 0) return '(no results)';
+  const lines = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (i > 0) lines.push('');
+    lines.push(`- # result ${i + 1}`);
+    for (const col of columns) {
+      const val = String(rows[i][col] ?? '');
+      // Quote values that contain special YAML characters
+      const needsQuote = val.includes(':') || val.includes('#') || val.includes('"') || val.includes("'") || val.includes('\n') || val === '';
+      lines.push(`  ${col}: ${needsQuote ? '"' + val.replace(/"/g, '\\"') + '"' : val}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** Output rows in the specified format */
+function outputFormatted(rows, columns, format) {
+  switch (format) {
+    case 'csv':
+      console.log(formatCsv(rows, columns));
+      break;
+    case 'yaml':
+      console.log(formatYaml(rows, columns));
+      break;
+    case 'json':
+      console.log(JSON.stringify(rows, null, 2));
+      break;
+    case 'table':
+    default:
+      printTable(rows, columns);
+      break;
+  }
+}
+
 // ─── Commands ──────────────────────────────────────────────────────────────────
 
 program
@@ -586,6 +641,7 @@ program
   .option('--filter <key=value>', 'Filter by property (e.g. Status=Active)')
   .option('--sort <key:direction>', 'Sort by property (e.g. Date:desc)')
   .option('--limit <n>', 'Max results (default: 100, max: 100)', '100')
+  .option('--output <format>', 'Output format: table, csv, json, yaml (default: table)')
   .action(async (db, opts, cmd) => {
     try {
       const notion = getNotion();
@@ -612,7 +668,11 @@ program
       }
 
       const res = await notion.dataSources.query(params);
-      if (getGlobalJson(cmd)) {
+
+      // Determine output format: --output takes precedence, --json is shorthand
+      const format = opts.output || (getGlobalJson(cmd) ? 'json' : 'table');
+
+      if (format === 'json') {
         console.log(JSON.stringify(res, null, 2));
         return;
       }
@@ -623,7 +683,7 @@ program
         return;
       }
       const columns = Object.keys(rows[0]);
-      printTable(rows, columns);
+      outputFormatted(rows, columns, format);
     } catch (err) {
       console.error('Query failed:', err.message);
       process.exit(1);
@@ -801,6 +861,140 @@ program
       printTable(rows, ['id', 'title', 'url']);
     } catch (err) {
       console.error('List databases failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── users ─────────────────────────────────────────────────────────────────────
+program
+  .command('users')
+  .description('List all users in the workspace')
+  .action(async (opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const res = await notion.users.list({});
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      const rows = res.results.map(u => ({
+        id: u.id,
+        name: u.name || '',
+        type: u.type || '',
+        email: (u.person && u.person.email) || '',
+      }));
+      printTable(rows, ['id', 'name', 'type', 'email']);
+    } catch (err) {
+      console.error('Users failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── user ──────────────────────────────────────────────────────────────────────
+program
+  .command('user <user-id>')
+  .description('Get user details')
+  .action(async (userId, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const user = await notion.users.retrieve({ user_id: userId });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(user, null, 2));
+        return;
+      }
+      console.log(`User: ${user.id}`);
+      console.log(`Name: ${user.name || '(unnamed)'}`);
+      console.log(`Type: ${user.type || ''}`);
+      if (user.person && user.person.email) {
+        console.log(`Email: ${user.person.email}`);
+      }
+      if (user.avatar_url) {
+        console.log(`Avatar: ${user.avatar_url}`);
+      }
+      if (user.bot) {
+        console.log(`Bot Owner: ${JSON.stringify(user.bot.owner || {})}`);
+      }
+    } catch (err) {
+      console.error('User failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── comments ──────────────────────────────────────────────────────────────────
+program
+  .command('comments <page-id>')
+  .description('List comments on a page')
+  .action(async (pageId, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const res = await notion.comments.list({ block_id: pageId });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      if (res.results.length === 0) {
+        console.log('(no comments)');
+        return;
+      }
+      const rows = res.results.map(c => ({
+        id: c.id,
+        text: richTextToPlain(c.rich_text),
+        created: c.created_time || '',
+        author: c.created_by?.name || c.created_by?.id || '',
+      }));
+      printTable(rows, ['id', 'text', 'created', 'author']);
+    } catch (err) {
+      console.error('Comments failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── comment ───────────────────────────────────────────────────────────────────
+program
+  .command('comment <page-id> <text>')
+  .description('Add a comment to a page')
+  .action(async (pageId, text, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const res = await notion.comments.create({
+        parent: { page_id: pageId },
+        rich_text: [{ text: { content: text } }],
+      });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      console.log(`✅ Comment added: ${res.id}`);
+    } catch (err) {
+      console.error('Comment failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── append ────────────────────────────────────────────────────────────────────
+program
+  .command('append <page-id> <text>')
+  .description('Append a text block to a page')
+  .action(async (pageId, text, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const res = await notion.blocks.children.append({
+        block_id: pageId,
+        children: [{
+          object: 'block',
+          type: 'paragraph',
+          paragraph: {
+            rich_text: [{ text: { content: text } }],
+          },
+        }],
+      });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      console.log(`✅ Appended text block to page ${pageId}`);
+    } catch (err) {
+      console.error('Append failed:', err.message);
       process.exit(1);
     }
   });
