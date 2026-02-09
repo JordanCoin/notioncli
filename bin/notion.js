@@ -255,7 +255,7 @@ program
       for (const db of res.results) {
         const title = richTextToPlain(db.title) || '';
         const dsId = db.id;
-        const dbId = db.database_id || dsId;
+        const dbId = (db.parent && db.parent.type === 'database_id' && db.parent.database_id) || db.database_id || dsId;
 
         // Auto-generate a slug from the title
         let slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
@@ -328,8 +328,8 @@ alias
 
       if (match) {
         dataSourceId = match.id;
-        // The database_id might differ from data_source_id
-        const dbId = match.database_id || databaseId;
+        // The database_id might differ from data_source_id — check parent
+        const dbId = (match.parent && match.parent.type === 'database_id' && match.parent.database_id) || match.database_id || databaseId;
         config.aliases[name] = {
           database_id: dbId,
           data_source_id: dataSourceId,
@@ -1036,6 +1036,416 @@ program
       console.log(`✅ Appended text block to page ${pageId}`);
     } catch (err) {
       console.error('Append failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── me ────────────────────────────────────────────────────────────────────────
+program
+  .command('me')
+  .description('Show details about the current integration/bot')
+  .action(async (opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const me = await notion.users.me({});
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(me, null, 2));
+        return;
+      }
+      console.log(`Bot: ${me.name || '(unnamed)'}`);
+      console.log(`ID: ${me.id}`);
+      console.log(`Type: ${me.type}`);
+      if (me.bot?.owner) {
+        const owner = me.bot.owner;
+        console.log(`Owner: ${owner.type === 'workspace' ? 'Workspace' : owner.user?.name || owner.type}`);
+      }
+      if (me.avatar_url) {
+        console.log(`Avatar: ${me.avatar_url}`);
+      }
+    } catch (err) {
+      console.error('Me failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── move ──────────────────────────────────────────────────────────────────────
+program
+  .command('move <page-or-alias>')
+  .description('Move a page to a new parent (page or database)')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .option('--to <parent-id-or-alias>', 'Destination parent (page ID, database alias, or database ID)')
+  .action(async (target, opts, cmd) => {
+    try {
+      if (!opts.to) {
+        console.error('--to is required. Specify a parent page ID or database alias.');
+        process.exit(1);
+      }
+      const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
+
+      // Resolve --to target
+      let parent;
+      const config = loadConfig();
+      if (config.aliases && config.aliases[opts.to]) {
+        const db = config.aliases[opts.to];
+        // pages.move() requires data_source_id parent, not database_id
+        parent = { type: 'data_source_id', data_source_id: db.data_source_id };
+      } else if (UUID_REGEX.test(opts.to)) {
+        // Assume page ID — user can also pass a database_id
+        parent = { type: 'page_id', page_id: opts.to };
+      } else {
+        console.error(`Unknown destination: "${opts.to}". Use a page ID or database alias.`);
+        const aliasNames = config.aliases ? Object.keys(config.aliases) : [];
+        if (aliasNames.length > 0) {
+          console.error(`Available aliases: ${aliasNames.join(', ')}`);
+        }
+        process.exit(1);
+      }
+
+      const res = await notion.pages.move({ page_id: pageId, parent });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      console.log(`✅ Moved page: ${pageId.slice(0, 8)}…`);
+      if (res.url) console.log(`   URL: ${res.url}`);
+    } catch (err) {
+      console.error('Move failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── templates ─────────────────────────────────────────────────────────────────
+program
+  .command('templates <database>')
+  .description('List page templates available for a database')
+  .action(async (db, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const dbIds = resolveDb(db);
+      const res = await notion.dataSources.listTemplates({
+        data_source_id: dbIds.data_source_id,
+      });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      if (!res.results || res.results.length === 0) {
+        console.log('No templates found for this database.');
+        return;
+      }
+      const rows = res.results.map(t => {
+        let title = '';
+        if (t.properties) {
+          for (const [, prop] of Object.entries(t.properties)) {
+            if (prop.type === 'title') {
+              title = propValue(prop);
+              break;
+            }
+          }
+        }
+        return {
+          id: t.id,
+          title: title || '(untitled)',
+          url: t.url || '',
+        };
+      });
+      printTable(rows, ['id', 'title', 'url']);
+    } catch (err) {
+      console.error('Templates failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── db-create ─────────────────────────────────────────────────────────────────
+program
+  .command('db-create <parent-page-id> <title>')
+  .description('Create a new database under a page')
+  .option('--prop <name:type...>', 'Property definition — repeatable (e.g. --prop "Status:select" --prop "Priority:number")', (v, prev) => prev.concat([v]), [])
+  .option('--alias <name>', 'Auto-create an alias for the new database')
+  .action(async (parentPageId, title, opts, cmd) => {
+    try {
+      const notion = getNotion();
+
+      // Build properties — always include a title property
+      const properties = {};
+      let hasTitleProp = false;
+
+      for (const kv of opts.prop) {
+        const colonIdx = kv.indexOf(':');
+        if (colonIdx === -1) {
+          console.error(`Invalid property format: ${kv} (expected name:type)`);
+          console.error('Supported types: title, rich_text, number, select, multi_select, date, checkbox, url, email, phone_number, status');
+          process.exit(1);
+        }
+        const name = kv.slice(0, colonIdx);
+        const type = kv.slice(colonIdx + 1).toLowerCase();
+        if (type === 'title') hasTitleProp = true;
+        properties[name] = { [type]: {} };
+      }
+
+      // Ensure there's a title property
+      if (!hasTitleProp) {
+        properties['Name'] = { title: {} };
+      }
+
+      const res = await notion.databases.create({
+        parent: { type: 'page_id', page_id: parentPageId },
+        title: [{ text: { content: title } }],
+        properties,
+      });
+
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+
+      console.log(`✅ Created database: ${res.id.slice(0, 8)}…`);
+      console.log(`   Title: ${title}`);
+      console.log(`   Properties: ${Object.keys(properties).join(', ')}`);
+
+      // Auto-create alias if requested
+      if (opts.alias) {
+        const config = loadConfig();
+        if (!config.aliases) config.aliases = {};
+        config.aliases[opts.alias] = {
+          database_id: res.database_id || res.id,
+          data_source_id: res.id,
+        };
+        saveConfig(config);
+        console.log(`   Alias: ${opts.alias}`);
+      }
+    } catch (err) {
+      console.error('Database create failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── db-update ─────────────────────────────────────────────────────────────────
+program
+  .command('db-update <database>')
+  .description('Update a database title or add properties')
+  .option('--title <text>', 'New database title')
+  .option('--add-prop <name:type...>', 'Add a property (e.g. --add-prop "Priority:number")', (v, prev) => prev.concat([v]), [])
+  .option('--remove-prop <name...>', 'Remove a property by name', (v, prev) => prev.concat([v]), [])
+  .action(async (db, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const dbIds = resolveDb(db);
+
+      // databases.update() requires the canonical database_id, which may differ
+      // from data_source_id. Resolve via dataSources.retrieve().parent.database_id.
+      let canonicalId = dbIds.database_id;
+      if (canonicalId === dbIds.data_source_id) {
+        try {
+          const ds = await notion.dataSources.retrieve({ data_source_id: canonicalId });
+          if (ds.parent && ds.parent.type === 'database_id') {
+            canonicalId = ds.parent.database_id;
+          }
+        } catch (_) { /* fall through with what we have */ }
+      }
+
+      const params = { database_id: canonicalId };
+
+      if (opts.title) {
+        params.title = [{ text: { content: opts.title } }];
+      }
+
+      if (opts.addProp.length > 0 || opts.removeProp.length > 0) {
+        params.properties = {};
+
+        for (const kv of opts.addProp) {
+          const colonIdx = kv.indexOf(':');
+          if (colonIdx === -1) {
+            console.error(`Invalid property format: ${kv} (expected name:type)`);
+            process.exit(1);
+          }
+          const name = kv.slice(0, colonIdx);
+          const type = kv.slice(colonIdx + 1).toLowerCase();
+          params.properties[name] = { [type]: {} };
+        }
+
+        for (const name of opts.removeProp) {
+          params.properties[name] = null;
+        }
+      }
+
+      const res = await notion.databases.update(params);
+
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+
+      console.log(`✅ Updated database: ${(dbIds.database_id || dbIds.data_source_id).slice(0, 8)}…`);
+      if (opts.title) console.log(`   Title: ${opts.title}`);
+      if (opts.addProp.length > 0) console.log(`   Added: ${opts.addProp.join(', ')}`);
+      if (opts.removeProp.length > 0) console.log(`   Removed: ${opts.removeProp.join(', ')}`);
+    } catch (err) {
+      console.error('Database update failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── upload ────────────────────────────────────────────────────────────────────
+program
+  .command('upload <page-or-alias> <file-path>')
+  .description('Upload a file to a page')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, filePath, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
+
+      // Resolve file path
+      const absPath = path.resolve(filePath);
+      if (!fs.existsSync(absPath)) {
+        console.error(`File not found: ${absPath}`);
+        process.exit(1);
+      }
+
+      const filename = path.basename(absPath);
+      const fileData = fs.readFileSync(absPath);
+      const fileSize = fileData.length;
+
+      // Detect MIME type from extension
+      const MIME_MAP = {
+        '.txt': 'text/plain', '.csv': 'text/csv', '.html': 'text/html',
+        '.json': 'application/json', '.pdf': 'application/pdf',
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+        '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+        '.zip': 'application/zip', '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+      const ext = path.extname(filename).toLowerCase();
+      const mimeType = MIME_MAP[ext] || 'application/octet-stream';
+
+      // Step 1: Create file upload
+      const upload = await notion.fileUploads.create({
+        parent: { type: 'page_id', page_id: pageId },
+        filename,
+      });
+      const uploadId = upload.id;
+
+      // Step 2: Send file data with correct content type
+      await notion.fileUploads.send({
+        file_upload_id: uploadId,
+        file: { data: new Blob([fileData], { type: mimeType }), filename },
+        part_number: '1',
+      });
+
+      // Step 3: Append file block to page (no complete() needed — attach directly)
+      await notion.blocks.children.append({
+        block_id: pageId,
+        children: [{
+          object: 'block',
+          type: 'file',
+          file: {
+            type: 'file_upload',
+            file_upload: { id: uploadId },
+          },
+        }],
+      });
+
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify({ upload_id: uploadId, filename, size: fileSize, page_id: pageId }, null, 2));
+        return;
+      }
+
+      const sizeStr = fileSize > 1024 * 1024
+        ? `${(fileSize / (1024 * 1024)).toFixed(1)} MB`
+        : `${(fileSize / 1024).toFixed(1)} KB`;
+
+      console.log(`✅ Uploaded: ${filename} (${sizeStr})`);
+      console.log(`   Page: ${pageId.slice(0, 8)}…`);
+    } catch (err) {
+      console.error('Upload failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── props ─────────────────────────────────────────────────────────────────────
+program
+  .command('props <page-or-alias>')
+  .description('List all properties with full paginated values')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
+      const page = await notion.pages.retrieve({ page_id: pageId });
+
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(page, null, 2));
+        return;
+      }
+
+      console.log(`Page: ${page.id}`);
+      console.log(`URL:  ${page.url}\n`);
+
+      for (const [name, prop] of Object.entries(page.properties)) {
+        // For paginated properties (relation, rollup, rich_text, title, people),
+        // use the property retrieval endpoint to get full values
+        const needsPagination = ['relation', 'rollup', 'rich_text', 'title', 'people'].includes(prop.type);
+
+        if (needsPagination && prop.id) {
+          try {
+            const fullProp = await notion.pages.properties.retrieve({
+              page_id: pageId,
+              property_id: prop.id,
+            });
+
+            if (fullProp.results) {
+              // Paginated property — collect all results
+              const items = fullProp.results;
+              if (prop.type === 'relation') {
+                if (items.length === 0) {
+                  console.log(`  ${name}: (none)`);
+                } else {
+                  const titles = [];
+                  for (const item of items) {
+                    const relId = item.relation?.id;
+                    if (relId) {
+                      try {
+                        const linked = await notion.pages.retrieve({ page_id: relId });
+                        let t = '';
+                        for (const [, p] of Object.entries(linked.properties)) {
+                          if (p.type === 'title') { t = propValue(p); break; }
+                        }
+                        titles.push(t || relId.slice(0, 8) + '…');
+                      } catch {
+                        titles.push(relId.slice(0, 8) + '…');
+                      }
+                    }
+                  }
+                  console.log(`  ${name}: ${titles.join(', ')}`);
+                }
+              } else if (prop.type === 'rich_text' || prop.type === 'title') {
+                const text = items.map(i => i[prop.type]?.plain_text || '').join('');
+                console.log(`  ${name}: ${text}`);
+              } else if (prop.type === 'people') {
+                const people = items.map(i => i.people?.name || i.people?.id || '').join(', ');
+                console.log(`  ${name}: ${people}`);
+              } else {
+                console.log(`  ${name}: ${JSON.stringify(items)}`);
+              }
+            } else {
+              // Non-paginated response
+              console.log(`  ${name}: ${propValue(fullProp)}`);
+            }
+          } catch {
+            // Fallback to basic propValue
+            console.log(`  ${name}: ${propValue(prop)}`);
+          }
+        } else {
+          console.log(`  ${name}: ${propValue(prop)}`);
+        }
+      }
+    } catch (err) {
+      console.error('Props failed:', err.message);
       process.exit(1);
     }
   });
