@@ -68,6 +68,45 @@ function resolveDb(aliasOrId) {
   process.exit(1);
 }
 
+/**
+ * Resolve alias + filter → page ID, or pass through a raw UUID.
+ * Used by update, delete, get, blocks, comments, comment, append.
+ *
+ * Returns { pageId, dbIds } where dbIds is non-null when resolved via alias.
+ */
+async function resolvePageId(aliasOrId, filterStr) {
+  const config = loadConfig();
+  if (config.aliases && config.aliases[aliasOrId]) {
+    if (!filterStr) {
+      console.error('When using an alias, --filter is required to identify a specific page.');
+      console.error(`Example: notion update ${aliasOrId} --filter "Name=My Page" --prop "Status=Done"`);
+      process.exit(1);
+    }
+    const dbIds = config.aliases[aliasOrId];
+    const notion = getNotion();
+    const filter = await buildFilter(dbIds, filterStr);
+    const res = await notion.dataSources.query({
+      data_source_id: dbIds.data_source_id,
+      filter,
+      page_size: 5,
+    });
+    if (res.results.length === 0) {
+      console.error('No matching page found.');
+      process.exit(1);
+    }
+    if (res.results.length > 1) {
+      console.error(`Multiple pages match (${res.results.length}). Use a more specific filter or pass a page ID directly.`);
+      const rows = pagesToRows(res.results);
+      const cols = Object.keys(rows[0]).slice(0, 4);
+      printTable(rows, cols);
+      process.exit(1);
+    }
+    return { pageId: res.results[0].id, dbIds };
+  }
+  // Treat as raw page ID
+  return { pageId: aliasOrId, dbIds: null };
+}
+
 // ─── Lazy Notion client ────────────────────────────────────────────────────────
 
 let _notion = null;
@@ -718,19 +757,24 @@ program
 
 // ─── update ────────────────────────────────────────────────────────────────────
 program
-  .command('update <page-id>')
-  .description('Update a page\'s properties (e.g. notion update abc123 --prop "Status=Done")')
+  .command('update <page-or-alias>')
+  .description('Update a page\'s properties by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
   .option('--prop <key=value...>', 'Property value — repeatable', (v, prev) => prev.concat([v]), [])
-  .action(async (pageId, opts, cmd) => {
+  .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
-      const page = await notion.pages.retrieve({ page_id: pageId });
-      const dsId = page.parent?.data_source_id;
-      if (!dsId) {
-        console.error('Page is not in a database — cannot auto-detect property types.');
-        process.exit(1);
+      const { pageId, dbIds: resolvedDbIds } = await resolvePageId(target, opts.filter);
+      let dbIds = resolvedDbIds;
+      if (!dbIds) {
+        const page = await notion.pages.retrieve({ page_id: pageId });
+        const dsId = page.parent?.data_source_id;
+        if (!dsId) {
+          console.error('Page is not in a database — cannot auto-detect property types.');
+          process.exit(1);
+        }
+        dbIds = { data_source_id: dsId, database_id: page.parent?.database_id || dsId };
       }
-      const dbIds = { data_source_id: dsId, database_id: page.parent?.database_id || dsId };
       const properties = await buildProperties(dbIds, opts.prop);
       const res = await notion.pages.update({ page_id: pageId, properties });
       if (getGlobalJson(cmd)) {
@@ -746,11 +790,13 @@ program
 
 // ─── delete (archive) ──────────────────────────────────────────────────────────
 program
-  .command('delete <page-id>')
-  .description('Delete (archive) a page by ID')
-  .action(async (pageId, opts, cmd) => {
+  .command('delete <page-or-alias>')
+  .description('Delete (archive) a page by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
       const res = await notion.pages.update({ page_id: pageId, archived: true });
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
@@ -766,11 +812,13 @@ program
 
 // ─── get ───────────────────────────────────────────────────────────────────────
 program
-  .command('get <page-id>')
-  .description('Get a page\'s properties by ID')
-  .action(async (pageId, opts, cmd) => {
+  .command('get <page-or-alias>')
+  .description('Get a page\'s properties by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
       const page = await notion.pages.retrieve({ page_id: pageId });
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(page, null, 2));
@@ -793,11 +841,13 @@ program
 
 // ─── blocks ────────────────────────────────────────────────────────────────────
 program
-  .command('blocks <page-id>')
-  .description('Get page content as rendered blocks (headings, lists, text, etc.)')
-  .action(async (pageId, opts, cmd) => {
+  .command('blocks <page-or-alias>')
+  .description('Get page content as rendered blocks by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
       const res = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
@@ -922,11 +972,13 @@ program
 
 // ─── comments ──────────────────────────────────────────────────────────────────
 program
-  .command('comments <page-id>')
-  .description('List comments on a page')
-  .action(async (pageId, opts, cmd) => {
+  .command('comments <page-or-alias>')
+  .description('List comments on a page by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
       const res = await notion.comments.list({ block_id: pageId });
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
@@ -951,11 +1003,13 @@ program
 
 // ─── comment ───────────────────────────────────────────────────────────────────
 program
-  .command('comment <page-id> <text>')
-  .description('Add a comment to a page')
-  .action(async (pageId, text, opts, cmd) => {
+  .command('comment <page-or-alias> <text>')
+  .description('Add a comment to a page by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, text, opts, cmd) => {
     try {
       const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
       const res = await notion.comments.create({
         parent: { page_id: pageId },
         rich_text: [{ text: { content: text } }],
@@ -973,11 +1027,13 @@ program
 
 // ─── append ────────────────────────────────────────────────────────────────────
 program
-  .command('append <page-id> <text>')
-  .description('Append a text block to a page')
-  .action(async (pageId, text, opts, cmd) => {
+  .command('append <page-or-alias> <text>')
+  .description('Append a text block to a page by ID or alias + filter')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, text, opts, cmd) => {
     try {
       const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
       const res = await notion.blocks.children.append({
         block_id: pageId,
         children: [{

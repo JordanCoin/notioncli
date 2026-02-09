@@ -123,23 +123,43 @@ Properties are matched **case-insensitively** against the database schema. No ne
 
 ### `notion update` — Update a Page
 
+By page ID:
 ```
 $ notion update a1b2c3d4-5678-90ab-cdef-1234567890ab --prop "Status=Done" --prop "Priority=Low"
 ✅ Updated page: a1b2c3d4-...
 ```
 
+By alias + filter (no UUIDs needed):
+```
+$ notion update workouts --filter "Name=LEGS #5" --prop "Notes=Great session"
+✅ Updated page: a1b2c3d4-...
+```
+
 ### `notion delete` — Delete (Archive) a Page
 
+By page ID:
 ```
 $ notion delete a1b2c3d4-5678-90ab-cdef-1234567890ab
 🗑️  Archived page: a1b2c3d4-...
    (Restore it from the trash in Notion if needed)
 ```
 
+By alias + filter:
+```
+$ notion delete workouts --filter "Date=2026-02-09"
+🗑️  Archived page: a1b2c3d4-...
+```
+
 ### `notion get` — View Page Details
 
+By page ID:
 ```
 $ notion get a1b2c3d4-5678-90ab-cdef-1234567890ab
+```
+
+By alias + filter:
+```
+$ notion get workouts --filter "Name=LEGS #5"
 Page: a1b2c3d4-5678-90ab-cdef-1234567890ab
 URL:  https://www.notion.so/New-Feature-a1b2c3d4...
 Created: 2026-02-10T14:30:00.000Z
@@ -154,8 +174,9 @@ Properties:
 
 ### `notion blocks` — View Page Content
 
+By page ID or alias + filter:
 ```
-$ notion blocks a1b2c3d4-5678-90ab-cdef-1234567890ab
+$ notion blocks projects --filter "Name=Project Overview"
 # Project Overview
 This is the main project page.
 • First task
@@ -232,8 +253,19 @@ notion alias list
 # Query and filter data
 notion query tasks --filter Status=Todo --sort Priority:desc
 
-# Create and update pages
+# Create and update pages — zero UUIDs workflow
 notion add tasks --prop "Name=Fix bug #42" --prop "Status=In Progress"
+notion update tasks --filter "Name=Fix bug #42" --prop "Status=Done"
+
+# View, comment, and append — all by alias + filter
+notion get tasks --filter "Name=Fix bug #42"
+notion comment tasks "Shipped! 🚀" --filter "Name=Fix bug #42"
+notion append tasks "Deployed to production" --filter "Name=Fix bug #42"
+
+# Delete by alias + filter
+notion delete tasks --filter "Name=Fix bug #42"
+
+# Or use raw page IDs if you already have them
 notion update <page-id> --prop "Status=Done"
 
 # Get raw JSON for parsing
@@ -241,6 +273,17 @@ notion --json query projects --limit 10
 ```
 
 No API key management, no curl commands, no JSON formatting — just simple shell commands.
+
+### Zero-UUID Workflow
+
+Every page-targeted command (`update`, `delete`, `get`, `blocks`, `comments`, `comment`, `append`) now accepts a **database alias + `--filter`** as an alternative to a raw page ID:
+
+```bash
+# Instead of: notion update a1b2c3d4-5678-90ab-cdef-1234567890ab --prop "Status=Done"
+# Just use:   notion update projects --filter "Name=Ship it" --prop "Status=Done"
+```
+
+The filter queries the database and expects **exactly one match**. If zero or multiple pages match, you get a clear error with guidance.
 
 ---
 

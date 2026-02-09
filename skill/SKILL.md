@@ -86,28 +86,45 @@ Multiple `--prop` flags for multiple properties. Property names are case-insensi
 
 ### Updating Pages
 
+By page ID:
 ```bash
 notion update <page-id> --prop "Status=Done"
 notion update <page-id> --prop "Priority=Low" --prop "Notes=Updated by CLI"
 ```
 
+By alias + filter (zero UUIDs):
+```bash
+notion update tasks --filter "Name=Ship feature" --prop "Status=Done"
+notion update workouts --filter "Name=LEGS #5" --prop "Notes=Great session"
+```
+
 ### Reading Pages & Content
 
+By page ID:
 ```bash
 notion get <page-id>               # Page properties
 notion blocks <page-id>            # Page content (headings, text, lists, etc.)
 ```
 
+By alias + filter:
+```bash
+notion get tasks --filter "Name=Ship feature"
+notion blocks tasks --filter "Name=Ship feature"
+```
+
 ### Deleting (Archiving) Pages
 
 ```bash
-notion delete <page-id>            # Archives the page (recoverable in Notion)
+notion delete <page-id>                              # By page ID
+notion delete tasks --filter "Name=Old task"         # By alias + filter
+notion delete workouts --filter "Date=2026-02-09"    # By alias + filter
 ```
 
 ### Appending Content
 
 ```bash
 notion append <page-id> "Meeting notes: discussed Q2 roadmap"
+notion append tasks "Status update: phase 1 complete" --filter "Name=Ship feature"
 ```
 
 Appends a paragraph block to the page.
@@ -122,8 +139,10 @@ notion user <user-id>              # Get details for a specific user
 ### Comments
 
 ```bash
-notion comments <page-id>          # List all comments on a page
-notion comment <page-id> "Looks good, shipping this!"   # Add a comment
+notion comments <page-id>                                      # By page ID
+notion comments tasks --filter "Name=Ship feature"             # By alias + filter
+notion comment <page-id> "Looks good, shipping this!"          # By page ID
+notion comment tasks "AI review complete ✅" --filter "Name=Ship feature"  # By alias + filter
 ```
 
 ### Search
@@ -166,30 +185,51 @@ notion query tasks --output csv                     # CSV for spreadsheet tools
 notion add tasks --prop "Name=Review PR #42" --prop "Status=Todo" --prop "Priority=High"
 ```
 
-### 4. Update an existing entry
+### 4. Update an existing entry (zero UUIDs)
 
 ```bash
+# By alias + filter — no page ID needed
+notion update tasks --filter "Name=Review PR #42" --prop "Status=Done"
+
+# Or by page ID if you already have it
 notion update <page-id> --prop "Status=Done"
 ```
 
-### 5. Read page content
+### 5. Read page content (zero UUIDs)
 
 ```bash
-notion get <page-id>          # Properties
-notion blocks <page-id>       # Full content blocks
+# By alias + filter
+notion get tasks --filter "Name=Review PR #42"
+notion blocks tasks --filter "Name=Review PR #42"
+
+# Or by page ID
+notion get <page-id>
+notion blocks <page-id>
 ```
 
 ### 6. Append notes to a page
 
 ```bash
+notion append tasks "Status update: completed phase 1" --filter "Name=Review PR #42"
 notion append <page-id> "Status update: completed phase 1"
 ```
 
 ### 7. Collaborate with comments
 
 ```bash
-notion comments <page-id>                          # Check existing comments
-notion comment <page-id> "AI review complete ✅"   # Leave a comment
+notion comments tasks --filter "Name=Review PR #42"              # Check existing
+notion comment tasks "AI review complete ✅" --filter "Name=Review PR #42"  # Add comment
+
+# Or by page ID
+notion comments <page-id>
+notion comment <page-id> "AI review complete ✅"
+```
+
+### 8. Delete by alias + filter
+
+```bash
+notion delete tasks --filter "Name=Old task"
+notion delete workouts --filter "Date=2026-02-09"
 ```
 
 ## Property Type Reference
