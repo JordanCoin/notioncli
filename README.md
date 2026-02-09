@@ -2,9 +2,30 @@
 
 A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.
 
-```
+**No more copy-pasting UUIDs.** Set up aliases once, then just type `notion query tasks` or `notion add projects --prop "Name=Ship it"`.
+
+```bash
 npm install -g notioncli
 ```
+
+## Quick Start
+
+```bash
+# 1. Set your API key
+notion init --key ntn_your_api_key_here
+
+# 2. Add aliases for your databases
+notion alias add projects a1b2c3d4-e5f6-7890-abcd-ef1234567890
+notion alias add tasks f9e8d7c6-b5a4-3210-fedc-ba0987654321
+
+# 3. Start using them
+notion query projects
+notion add tasks --prop "Name=Buy milk" --prop "Status=Todo"
+```
+
+That's it. You'll never type a database ID again.
+
+---
 
 ## Setup
 
@@ -15,12 +36,12 @@ npm install -g notioncli
 3. Give it a name (e.g. "My CLI")
 4. Copy the API key (starts with `ntn_`)
 
-### 2. Share Databases
+### 2. Share Your Databases
 
 In Notion, open each database you want to access:
 - Click the **•••** menu → **Connections** → Add your integration
 
-### 3. Initialize the CLI
+### 3. Initialize
 
 ```bash
 notion init --key ntn_your_api_key_here
@@ -46,35 +67,43 @@ Found 3 databases:
     Add alias: notion alias add meeting-notes 11223344-5566-7788-99aa-bbccddeeff00
 ```
 
-### 4. Add Aliases
+### 4. Add Your Aliases
+
+Just copy-paste the suggested commands:
 
 ```bash
 notion alias add projects a1b2c3d4-e5f6-7890-abcd-ef1234567890
 notion alias add reads f9e8d7c6-b5a4-3210-fedc-ba0987654321
+notion alias add meetings 11223344-5566-7788-99aa-bbccddeeff00
 ```
 
-Now use `projects` instead of the full ID everywhere.
+Done. Now use `projects`, `reads`, `meetings` everywhere instead of IDs.
 
-> **Alternative:** Skip `init` and use an environment variable:
+> **Alternative:** Skip `init` and set an environment variable:
 > ```bash
-> export NOTION_API_KEY=ntn_your_api_key_here
+> export NOTION_API_KEY=ntn_your_api_key
 > ```
+
+---
 
 ## Commands
 
-### List Databases
+### `notion query` — Query a Database
+
+The command you'll use most. Filter, sort, and browse your data:
 
 ```
-$ notion dbs
-id                                   │ title            │ url
-─────────────────────────────────────┼──────────────────┼──────────────
-a1b2c3d4-e5f6-7890-abcd-ef1234567890 │ Project Tracker  │ https://...
-f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ Reading List     │ https://...
+$ notion query projects
+Date       │ Name            │ Status │ Priority
+───────────┼─────────────────┼────────┼──────────
+2026-02-09 │ Launch CLI      │ Active │ High
+2026-02-08 │ Write Docs      │ Active │ Medium
+2026-02-07 │ Design Landing  │ Done   │ Low
+
+3 results
 ```
 
-### Query a Database
-
-Use an alias or a raw database ID:
+With filters and sorting:
 
 ```
 $ notion query projects --filter Status=Active --sort Date:desc --limit 5
@@ -86,11 +115,7 @@ Date       │ Name          │ Status │ Priority
 2 results
 ```
 
-```
-$ notion query a1b2c3d4-e5f6-7890-abcd-ef1234567890 --limit 10
-```
-
-### Add a Page
+### `notion add` — Add a Page
 
 ```
 $ notion add projects --prop "Name=New Feature" --prop "Status=Todo" --prop "Date=2026-02-10"
@@ -98,16 +123,18 @@ $ notion add projects --prop "Name=New Feature" --prop "Status=Todo" --prop "Dat
    URL: https://www.notion.so/...
 ```
 
-Properties are matched case-insensitively against the database schema. Supported types: title, rich_text, number, select, multi_select, date, checkbox, url, email, phone_number, status.
+Properties are matched **case-insensitively** against the database schema. No need to memorize exact field names.
 
-### Update a Page
+**Supported types:** title, rich_text, number, select, multi_select, date, checkbox, url, email, phone_number, status.
+
+### `notion update` — Update a Page
 
 ```
 $ notion update a1b2c3d4-5678-90ab-cdef-1234567890ab --prop "Status=Done" --prop "Priority=Low"
 ✅ Updated page: a1b2c3d4-...
 ```
 
-### Delete (Archive) a Page
+### `notion delete` — Delete (Archive) a Page
 
 ```
 $ notion delete a1b2c3d4-5678-90ab-cdef-1234567890ab
@@ -115,7 +142,7 @@ $ notion delete a1b2c3d4-5678-90ab-cdef-1234567890ab
    (Restore it from the trash in Notion if needed)
 ```
 
-### Get Page Details
+### `notion get` — View Page Details
 
 ```
 $ notion get a1b2c3d4-5678-90ab-cdef-1234567890ab
@@ -131,7 +158,7 @@ Properties:
   Priority: High
 ```
 
-### Get Page Content (Blocks)
+### `notion blocks` — View Page Content
 
 ```
 $ notion blocks a1b2c3d4-5678-90ab-cdef-1234567890ab
@@ -143,39 +170,80 @@ This is the main project page.
 ☐ Pending item
 ```
 
-### Search
+### `notion dbs` — List All Databases
 
 ```
-$ notion search "meeting notes"
-id                                   │ type        │ title          │ url
-─────────────────────────────────────┼─────────────┼────────────────┼──────────────
-a1b2c3d4-e5f6-7890-abcd-ef1234567890 │ page        │ Meeting Notes  │ https://...
-f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ data_source │ Meeting DB     │ https://...
+$ notion dbs
+id                                   │ title            │ url
+─────────────────────────────────────┼──────────────────┼──────────────
+a1b2c3d4-e5f6-7890-abcd-ef1234567890 │ Project Tracker  │ https://...
+f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ Reading List     │ https://...
 
 2 results
 ```
 
-### Manage Aliases
+### `notion search` — Search Everything
+
+```
+$ notion search "meeting"
+id                                   │ type        │ title          │ url
+─────────────────────────────────────┼─────────────┼────────────────┼──────────────
+a1b2c3d4-e5f6-7890-abcd-ef1234567890 │ page        │ Meeting Notes  │ https://...
+f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ data_source │ Meetings DB    │ https://...
+
+2 results
+```
+
+### `notion alias` — Manage Aliases
 
 ```bash
-# List all aliases
+# See your aliases
 notion alias list
 
-# Add an alias
+# Add one (auto-discovers the right IDs)
 notion alias add tasks a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
-# Remove an alias
+# Remove one
 notion alias remove tasks
 ```
 
-### JSON Output
+### `--json` — Raw JSON Output
 
-Add `--json` to any command for raw API output:
+Add `--json` to any command for the raw Notion API response:
 
 ```bash
 notion --json query projects --limit 1
+notion --json dbs
 notion --json get a1b2c3d4-...
 ```
+
+Great for piping into `jq` or other tools.
+
+---
+
+## Use It With AI Agents
+
+notioncli is designed to be fast for both humans and LLMs. AI coding agents can:
+
+```bash
+# Discover what's available
+notion dbs
+notion alias list
+
+# Query and filter data
+notion query tasks --filter Status=Todo --sort Priority:desc
+
+# Create and update pages
+notion add tasks --prop "Name=Fix bug #42" --prop "Status=In Progress"
+notion update <page-id> --prop "Status=Done"
+
+# Get raw JSON for parsing
+notion --json query projects --limit 10
+```
+
+No API key management, no curl commands, no JSON formatting — just simple shell commands.
+
+---
 
 ## Configuration
 
@@ -186,8 +254,8 @@ Config is stored at `~/.config/notioncli/config.json`:
   "apiKey": "ntn_...",
   "aliases": {
     "projects": {
-      "database_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "data_source_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      "database_id": "a1b2c3d4-...",
+      "data_source_id": "a1b2c3d4-..."
     }
   }
 }
@@ -195,22 +263,24 @@ Config is stored at `~/.config/notioncli/config.json`:
 
 **API key resolution order:**
 1. `NOTION_API_KEY` environment variable
-2. Config file (`~/.config/notioncli/config.json`)
+2. Config file
 3. Error with setup instructions
 
-## About Dual IDs (Notion API 2025-09-03)
+---
 
-The Notion API (version 2025-09-03) introduced a dual-ID system for databases:
+## Technical Notes
 
-- **`database_id`** — used for creating pages, retrieving schema
-- **`data_source_id`** — used for querying rows
+### Notion API 2025-09-03 — Dual IDs
 
-notioncli handles this automatically. When you add an alias, it discovers both IDs. When you pass a raw UUID, it works as both (the API resolves it).
+The latest Notion API introduced a dual-ID system for databases. Each database now has both a `database_id` and a `data_source_id`. **notioncli handles this automatically** — when you add an alias, both IDs are discovered and stored. When you pass a raw UUID, it resolves correctly.
 
-The `@notionhq/client` v5.x SDK reflects this:
-- `notion.dataSources.query()` replaces the old `notion.databases.query()`
-- `notion.dataSources.retrieve()` gets database properties
-- `notion.databases` namespace is for `create`, `update`, `retrieve` only
+You don't need to think about this. It just works.
+
+### Built on the Official SDK
+
+notioncli uses [`@notionhq/client`](https://github.com/makenotion/notion-sdk-js) v5.x, Notion's official JavaScript SDK.
+
+---
 
 ## Contributing
 
