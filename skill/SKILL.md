@@ -1,6 +1,6 @@
 ---
 name: notion
-description: Notion API for creating and managing pages, databases, and blocks via the notioncli CLI tool.
+description: Notion API for creating and managing pages, databases, blocks, relations, and rollups via the notioncli CLI tool.
 homepage: https://github.com/JordanCoin/notioncli
 metadata:
   openclaw:
@@ -8,7 +8,7 @@ metadata:
     requires:
       env: ["NOTION_API_KEY"]
     primaryEnv: NOTION_API_KEY
-    install: "npm install -g notioncli"
+    install: "npm install -g @jordancoin/notioncli"
 ---
 
 # notioncli — Notion API Skill
@@ -119,6 +119,27 @@ notion delete <page-id>                              # By page ID
 notion delete tasks --filter "Name=Old task"         # By alias + filter
 notion delete workouts --filter "Date=2026-02-09"    # By alias + filter
 ```
+
+### Relations & Rollups
+
+```bash
+notion relations tasks --filter "Name=Ship feature"           # See linked pages with titles
+notion relations projects --filter "Name=Launch CLI"          # Explore connections
+```
+
+Relations are automatically resolved to page titles in `get` output. Rollups are parsed into numbers, dates, or arrays instead of raw JSON.
+
+### Blocks CRUD
+
+```bash
+notion blocks tasks --filter "Name=Ship feature"              # View page content
+notion blocks tasks --filter "Name=Ship feature" --ids        # View with block IDs
+notion append tasks "New paragraph" --filter "Name=Ship feature"  # Append block
+notion block-edit <block-id> "Updated text"                   # Edit a block
+notion block-delete <block-id>                                # Delete a block
+```
+
+Use `--ids` to get block IDs, then target specific blocks with `block-edit` or `block-delete`.
 
 ### Appending Content
 

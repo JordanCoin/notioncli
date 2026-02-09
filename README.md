@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
 
-A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.
+A powerful CLI for the Notion API — aliases, zero UUIDs, relations & rollups, and full block-level CRUD. Built for humans and AI agents.
 
 **No more copy-pasting UUIDs.** Set up aliases once, then just type `notion query tasks` or `notion add projects --prop "Name=Ship it"`.
 
@@ -31,6 +31,39 @@ notion add projects --prop "Name=Ship it" --prop "Status=Todo"
 ```
 
 Zero UUIDs. One command. You're ready to go.
+
+---
+
+## What's New (v1.1)
+
+notioncli now understands Notion as a **graph**, not just a table.
+
+- 🔗 **Relations** — `get` resolves linked page titles automatically. New `notion relations` command for exploring connected pages.
+- 📊 **Rollups** — Numbers, dates, and arrays are parsed into readable values. No more raw JSON blobs.
+- 🧱 **Blocks CRUD** — Edit and delete blocks directly with `block-edit` and `block-delete`. Use `--ids` flag on `blocks` for precise targeting.
+
+---
+
+## Notion as a Graph
+
+Notion databases don't live in isolation — they're connected by relations and rollups. notioncli treats your workspace as a **graph of linked pages**:
+
+```
+$ notion get tasks --filter "Name=Ship v1.1"
+Properties:
+  Name: Ship v1.1
+  Status: Active
+  Project: Launch CLI        ← relation resolved to title
+  Task Count: 3              ← rollup parsed to number
+
+$ notion relations tasks --filter "Name=Ship v1.1"
+Project: 1 linked page
+id        │ title      │ url
+──────────┼────────────┼──────────────────────
+302903e2… │ Launch CLI │ https://notion.so/...
+```
+
+Relations resolve to human-readable titles. Rollups return real values. Blocks can be queried, edited, and deleted directly. This makes it possible to explore, automate, and reason about complex workspaces entirely from the CLI.
 
 ---
 
@@ -90,7 +123,7 @@ notion alias rename reading-list reads
 
 ### `notion query` — Query a Database
 
-The command you'll use most. Filter, sort, and browse your data:
+The command you'll use most. Filter, sort, and browse your data. Rollups are automatically parsed into numbers, dates, or arrays instead of raw JSON.
 
 ```
 $ notion query projects
@@ -107,12 +140,6 @@ With filters and sorting:
 
 ```
 $ notion query projects --filter Status=Active --sort Date:desc --limit 5
-Date       │ Name          │ Status │ Priority
-───────────┼───────────────┼────────┼─────────
-2026-02-09 │ Launch CLI    │ Active │ High
-2026-02-08 │ Write Docs    │ Active │ Medium
-
-2 results
 ```
 
 ### `notion add` — Add a Page
@@ -143,52 +170,70 @@ $ notion update workouts --filter "Name=LEGS #5" --prop "Notes=Great session"
 
 ### `notion delete` — Delete (Archive) a Page
 
-By page ID:
 ```
-$ notion delete a1b2c3d4-5678-90ab-cdef-1234567890ab
+$ notion delete workouts --filter "Date=2026-02-09"
 🗑️  Archived page: a1b2c3d4-...
    (Restore it from the trash in Notion if needed)
 ```
 
-By alias + filter:
-```
-$ notion delete workouts --filter "Date=2026-02-09"
-🗑️  Archived page: a1b2c3d4-...
-```
-
 ### `notion get` — View Page Details
 
-By page ID:
-```
-$ notion get a1b2c3d4-5678-90ab-cdef-1234567890ab
-```
+Relations are **automatically resolved** to linked page titles:
 
-By alias + filter:
 ```
-$ notion get workouts --filter "Name=LEGS #5"
+$ notion get tasks --filter "Name=Implement relations"
 Page: a1b2c3d4-5678-90ab-cdef-1234567890ab
-URL:  https://www.notion.so/New-Feature-a1b2c3d4...
+URL:  https://www.notion.so/...
 Created: 2026-02-10T14:30:00.000Z
 Updated: 2026-02-10T14:30:00.000Z
 
 Properties:
-  Name: New Feature
-  Status: Todo
-  Date: 2026-02-10
-  Priority: High
+  Name: Implement relations
+  Project: Build CLI              ← resolved title, not a UUID
+  Done: ✓
 ```
 
-### `notion blocks` — View Page Content
+### `notion relations` — Explore Connections
 
-By page ID or alias + filter:
+See what a page is linked to, with resolved titles and URLs:
+
 ```
-$ notion blocks projects --filter "Name=Project Overview"
-# Project Overview
-This is the main project page.
-• First task
-• Second task
-☑ Completed item
-☐ Pending item
+$ notion relations tasks --filter "Name=Implement relations"
+Project: 1 linked page
+id        │ title     │ url
+──────────┼───────────┼──────────────────────
+302903e2… │ Build CLI │ https://notion.so/...
+```
+
+### `notion blocks` — View & Edit Page Content
+
+View blocks with optional IDs for targeting:
+
+```
+$ notion blocks tasks --filter "Name=Ship v1.1" --ids
+[a1b2c3d4] # Project Overview
+[e5f67890] This is the main project page.
+[abcd1234] • First task
+[efgh5678] ☑ Completed item
+```
+
+In v1.1+, blocks are fully editable and deletable — not just readable:
+
+```
+$ notion block-edit a1b2c3d4-5678-90ab-cdef-1234567890ab "Updated heading text"
+✅ Updated heading_1 block: a1b2c3d4…
+
+$ notion block-delete a1b2c3d4-5678-90ab-cdef-1234567890ab
+🗑️  Deleted block: a1b2c3d4…
+```
+
+Use `notion blocks --ids` to list block IDs for precise edits.
+
+### `notion append` — Add Content to a Page
+
+```
+$ notion append tasks "Status update: phase 1 complete" --filter "Name=Ship feature"
+✅ Appended text block to page a1b2c3d4-...
 ```
 
 ### `notion dbs` — List All Databases
@@ -207,12 +252,19 @@ f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ Reading List     │ https://...
 
 ```
 $ notion search "meeting"
-id                                   │ type        │ title          │ url
-─────────────────────────────────────┼─────────────┼────────────────┼──────────────
-a1b2c3d4-e5f6-7890-abcd-ef1234567890 │ page        │ Meeting Notes  │ https://...
-f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ data_source │ Meetings DB    │ https://...
+```
 
-2 results
+### `notion users` / `notion user <id>` — Workspace Users
+
+```
+$ notion users
+```
+
+### `notion comments` / `notion comment` — Page Comments
+
+```
+$ notion comments tasks --filter "Name=Ship feature"
+$ notion comment tasks "Shipped! 🚀" --filter "Name=Ship feature"
 ```
 
 ### `notion alias` — Manage Aliases
@@ -220,17 +272,10 @@ f9e8d7c6-b5a4-3210-fedc-ba0987654321 │ data_source │ Meetings DB    │ http
 Aliases are created automatically by `notion init`, but you can manage them:
 
 ```bash
-# See your aliases
-notion alias list
-
-# Rename one
-notion alias rename project-tracker projects
-
-# Add one manually (auto-discovers the right IDs)
-notion alias add tasks a1b2c3d4-e5f6-7890-abcd-ef1234567890
-
-# Remove one
-notion alias remove tasks
+notion alias list                              # See all aliases
+notion alias rename project-tracker projects   # Rename one
+notion alias add tasks <database-id>           # Add manually
+notion alias remove tasks                      # Remove one
 ```
 
 ### `--json` — Raw JSON Output
@@ -239,11 +284,19 @@ Add `--json` to any command for the raw Notion API response:
 
 ```bash
 notion --json query projects --limit 1
-notion --json dbs
-notion --json get a1b2c3d4-...
+notion --json get tasks --filter "Name=Ship it"
 ```
 
 Great for piping into `jq` or other tools.
+
+### `--output` — Output Formats
+
+```bash
+notion query tasks --output csv     # CSV
+notion query tasks --output yaml    # YAML
+notion query tasks --output json    # JSON
+notion query tasks --output table   # Default
+```
 
 ---
 
@@ -263,16 +316,19 @@ notion query tasks --filter Status=Todo --sort Priority:desc
 notion add tasks --prop "Name=Fix bug #42" --prop "Status=In Progress"
 notion update tasks --filter "Name=Fix bug #42" --prop "Status=Done"
 
-# View, comment, and append — all by alias + filter
-notion get tasks --filter "Name=Fix bug #42"
-notion comment tasks "Shipped! 🚀" --filter "Name=Fix bug #42"
+# Explore relations between databases
+notion relations tasks --filter "Name=Fix bug #42"
+
+# View and edit page content
+notion blocks tasks --filter "Name=Fix bug #42" --ids
+notion block-edit <block-id> "Updated content"
 notion append tasks "Deployed to production" --filter "Name=Fix bug #42"
+
+# Comment and collaborate
+notion comment tasks "Shipped! 🚀" --filter "Name=Fix bug #42"
 
 # Delete by alias + filter
 notion delete tasks --filter "Name=Fix bug #42"
-
-# Or use raw page IDs if you already have them
-notion update <page-id> --prop "Status=Done"
 
 # Get raw JSON for parsing
 notion --json query projects --limit 10
@@ -282,7 +338,7 @@ No API key management, no curl commands, no JSON formatting — just simple shel
 
 ### Zero-UUID Workflow
 
-Every page-targeted command (`update`, `delete`, `get`, `blocks`, `comments`, `comment`, `append`) now accepts a **database alias + `--filter`** as an alternative to a raw page ID:
+Every page-targeted command (`update`, `delete`, `get`, `blocks`, `relations`, `comments`, `comment`, `append`, `block-edit`, `block-delete`) accepts a **database alias + `--filter`** as an alternative to a raw page ID:
 
 ```bash
 # Instead of: notion update a1b2c3d4-5678-90ab-cdef-1234567890ab --prop "Status=Done"
@@ -323,6 +379,12 @@ Config is stored at `~/.config/notioncli/config.json`:
 The latest Notion API introduced a dual-ID system for databases. Each database now has both a `database_id` and a `data_source_id`. **notioncli handles this automatically** — when you add an alias, both IDs are discovered and stored. When you pass a raw UUID, it resolves correctly.
 
 You don't need to think about this. It just works.
+
+### Reliability
+
+- 139 unit tests
+- Tested against live Notion workspaces
+- Designed to fail loudly and safely when filters match zero or multiple pages
 
 ### Built on the Official SDK
 
