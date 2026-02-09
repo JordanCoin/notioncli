@@ -203,7 +203,7 @@ async function buildFilter(dbIds, filterStr) {
 program
   .name('notion')
   .description('A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.')
-  .version('1.0.0')
+  .version('1.1.0')
   .option('--json', 'Output raw JSON instead of formatted tables');
 
 // ─── init ──────────────────────────────────────────────────────────────────────
@@ -619,7 +619,43 @@ program
       console.log('');
       console.log('Properties:');
       for (const [name, prop] of Object.entries(page.properties)) {
-        console.log(`  ${name}: ${propValue(prop)}`);
+        if (prop.type === 'relation') {
+          const rels = prop.relation || [];
+          if (rels.length === 0) {
+            console.log(`  ${name}: (none)`);
+          } else {
+            // Resolve relation titles
+            const titles = [];
+            for (const rel of rels) {
+              try {
+                const linked = await notion.pages.retrieve({ page_id: rel.id });
+                let t = '';
+                for (const [, p] of Object.entries(linked.properties)) {
+                  if (p.type === 'title') { t = propValue(p); break; }
+                }
+                titles.push(t || rel.id.slice(0, 8) + '…');
+              } catch {
+                titles.push(rel.id.slice(0, 8) + '…');
+              }
+            }
+            console.log(`  ${name}: ${titles.join(', ')}`);
+          }
+        } else if (prop.type === 'rollup') {
+          const r = prop.rollup;
+          if (!r) {
+            console.log(`  ${name}: (empty)`);
+          } else if (r.type === 'number') {
+            console.log(`  ${name}: ${r.number != null ? r.number : '(empty)'}`);
+          } else if (r.type === 'date') {
+            console.log(`  ${name}: ${r.date ? r.date.start : '(empty)'}`);
+          } else if (r.type === 'array' && r.array) {
+            console.log(`  ${name}: ${r.array.map(item => propValue(item)).join(', ')}`);
+          } else {
+            console.log(`  ${name}: ${JSON.stringify(r)}`);
+          }
+        } else {
+          console.log(`  ${name}: ${propValue(prop)}`);
+        }
       }
     } catch (err) {
       console.error('Get failed:', err.message);
@@ -632,6 +668,7 @@ program
   .command('blocks <page-or-alias>')
   .description('Get page content as rendered blocks by ID or alias + filter')
   .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .option('--ids', 'Show block IDs alongside content (for editing/deleting)')
   .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
@@ -663,10 +700,170 @@ program
           : type === 'code' ? '```\n'
           : '';
         const suffix = type === 'code' ? '\n```' : '';
-        console.log(`${prefix}${text}${suffix}`);
+        const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+        console.log(`${idTag}${prefix}${text}${suffix}`);
       }
     } catch (err) {
       console.error('Blocks failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── block-edit ────────────────────────────────────────────────────────────────
+program
+  .command('block-edit <block-id> <text>')
+  .description('Update a block\'s text content')
+  .action(async (blockId, text, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      // First retrieve the block to know its type
+      const block = await notion.blocks.retrieve({ block_id: blockId });
+      const type = block.type;
+
+      // Build the update payload based on block type
+      const supportedTextTypes = [
+        'paragraph', 'heading_1', 'heading_2', 'heading_3',
+        'bulleted_list_item', 'numbered_list_item', 'quote', 'callout', 'toggle',
+      ];
+
+      if (type === 'to_do') {
+        const res = await notion.blocks.update({
+          block_id: blockId,
+          to_do: {
+            rich_text: [{ text: { content: text } }],
+            checked: block.to_do?.checked || false,
+          },
+        });
+        if (getGlobalJson(cmd)) { console.log(JSON.stringify(res, null, 2)); return; }
+        console.log(`✅ Updated ${type} block: ${blockId.slice(0, 8)}…`);
+      } else if (supportedTextTypes.includes(type)) {
+        const res = await notion.blocks.update({
+          block_id: blockId,
+          [type]: {
+            rich_text: [{ text: { content: text } }],
+          },
+        });
+        if (getGlobalJson(cmd)) { console.log(JSON.stringify(res, null, 2)); return; }
+        console.log(`✅ Updated ${type} block: ${blockId.slice(0, 8)}…`);
+      } else if (type === 'code') {
+        const res = await notion.blocks.update({
+          block_id: blockId,
+          code: {
+            rich_text: [{ text: { content: text } }],
+            language: block.code?.language || 'plain text',
+          },
+        });
+        if (getGlobalJson(cmd)) { console.log(JSON.stringify(res, null, 2)); return; }
+        console.log(`✅ Updated code block: ${blockId.slice(0, 8)}…`);
+      } else {
+        console.error(`Block type "${type}" doesn't support text editing.`);
+        console.error('Supported types: paragraph, headings, lists, to_do, quote, callout, toggle, code');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('Block edit failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── block-delete ──────────────────────────────────────────────────────────────
+program
+  .command('block-delete <block-id>')
+  .description('Delete a block from a page')
+  .action(async (blockId, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const res = await notion.blocks.delete({ block_id: blockId });
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(res, null, 2));
+        return;
+      }
+      console.log(`🗑️  Deleted block: ${blockId.slice(0, 8)}…`);
+    } catch (err) {
+      console.error('Block delete failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── relations ─────────────────────────────────────────────────────────────────
+program
+  .command('relations <page-or-alias>')
+  .description('Show all relation and rollup properties with resolved titles')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
+      const page = await notion.pages.retrieve({ page_id: pageId });
+
+      if (getGlobalJson(cmd)) {
+        console.log(JSON.stringify(page, null, 2));
+        return;
+      }
+
+      let found = false;
+
+      for (const [name, prop] of Object.entries(page.properties)) {
+        if (prop.type === 'relation') {
+          const rels = prop.relation || [];
+          if (rels.length === 0) {
+            console.log(`\n${name}: (no linked pages)`);
+            continue;
+          }
+          found = true;
+          console.log(`\n${name}: ${rels.length} linked page${rels.length !== 1 ? 's' : ''}`);
+
+          // Resolve each related page title
+          const rows = [];
+          for (const rel of rels) {
+            try {
+              const linked = await notion.pages.retrieve({ page_id: rel.id });
+              let title = '';
+              for (const [, p] of Object.entries(linked.properties)) {
+                if (p.type === 'title') {
+                  title = propValue(p);
+                  break;
+                }
+              }
+              rows.push({
+                id: rel.id.slice(0, 8) + '…',
+                title: title || '(untitled)',
+                url: linked.url || '',
+              });
+            } catch {
+              rows.push({ id: rel.id.slice(0, 8) + '…', title: '(access denied)', url: '' });
+            }
+          }
+          printTable(rows, ['id', 'title', 'url']);
+        }
+
+        if (prop.type === 'rollup') {
+          found = true;
+          const r = prop.rollup;
+          console.log(`\n${name} (rollup):`);
+          if (!r) {
+            console.log('  (empty)');
+            continue;
+          }
+          if (r.type === 'number') {
+            console.log(`  ${r.function || 'value'}: ${r.number}`);
+          } else if (r.type === 'date') {
+            console.log(`  ${r.date ? r.date.start : '(empty)'}`);
+          } else if (r.type === 'array' && r.array) {
+            for (const item of r.array) {
+              console.log(`  • ${propValue(item)}`);
+            }
+          } else {
+            console.log(`  ${JSON.stringify(r)}`);
+          }
+        }
+      }
+
+      if (!found) {
+        console.log('This page has no relation or rollup properties.');
+      }
+    } catch (err) {
+      console.error('Relations failed:', err.message);
       process.exit(1);
     }
   });

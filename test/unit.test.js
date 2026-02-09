@@ -151,15 +151,54 @@ describe('propValue', () => {
     assert.equal(propValue({ type: 'formula', formula: null }), '');
   });
 
-  it('handles relation type', () => {
-    const prop = { type: 'relation', relation: [{ id: 'abc' }, { id: 'def' }] };
-    assert.equal(propValue(prop), 'abc, def');
+  it('handles relation type — empty', () => {
     assert.equal(propValue({ type: 'relation', relation: [] }), '');
   });
 
-  it('handles rollup type', () => {
-    const rollupData = { type: 'number', number: 100 };
-    assert.equal(propValue({ type: 'rollup', rollup: rollupData }), JSON.stringify(rollupData));
+  it('handles relation type — single', () => {
+    const prop = { type: 'relation', relation: [{ id: 'abc12345-6789-0000-0000-000000000000' }] };
+    assert.equal(propValue(prop), '→ abc12345…');
+  });
+
+  it('handles relation type — multiple', () => {
+    const prop = { type: 'relation', relation: [{ id: 'aaa' }, { id: 'bbb' }, { id: 'ccc' }] };
+    assert.equal(propValue(prop), '→ 3 linked');
+  });
+
+  it('handles rollup type — number', () => {
+    assert.equal(propValue({ type: 'rollup', rollup: { type: 'number', number: 100 } }), '100');
+  });
+
+  it('handles rollup type — null number', () => {
+    assert.equal(propValue({ type: 'rollup', rollup: { type: 'number', number: null } }), '');
+  });
+
+  it('handles rollup type — date', () => {
+    assert.equal(propValue({ type: 'rollup', rollup: { type: 'date', date: { start: '2026-02-09' } } }), '2026-02-09');
+  });
+
+  it('handles rollup type — date range', () => {
+    assert.equal(propValue({ type: 'rollup', rollup: { type: 'date', date: { start: '2026-02-01', end: '2026-02-28' } } }), '2026-02-01 → 2026-02-28');
+  });
+
+  it('handles rollup type — array', () => {
+    const rollup = {
+      type: 'array',
+      array: [
+        { type: 'number', number: 1 },
+        { type: 'number', number: 2 },
+        { type: 'number', number: 3 },
+      ],
+    };
+    assert.equal(propValue({ type: 'rollup', rollup }), '1, 2, 3');
+  });
+
+  it('handles rollup type — empty array', () => {
+    assert.equal(propValue({ type: 'rollup', rollup: { type: 'array', array: [] } }), '');
+  });
+
+  it('handles rollup type — null', () => {
+    assert.equal(propValue({ type: 'rollup', rollup: null }), '');
   });
 
   it('handles people type', () => {
