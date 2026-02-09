@@ -1,0 +1,7 @@
+node_modules/
+.env
+.env.*
+*.log
+
+# Config files contain API keys — don't commit
+config.json

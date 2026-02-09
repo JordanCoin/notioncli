@@ -1,0 +1,38 @@
+{
+  "name": "notioncli",
+  "version": "1.0.0",
+  "description": "A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.",
+  "main": "bin/notion.js",
+  "bin": {
+    "notion": "./bin/notion.js"
+  },
+  "scripts": {
+    "test": "node bin/notion.js --help"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JordanCoin/notioncli.git"
+  },
+  "keywords": [
+    "notion",
+    "cli",
+    "api",
+    "database",
+    "productivity",
+    "workspace",
+    "automation"
+  ],
+  "author": "JordanCoin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/JordanCoin/notioncli/issues"
+  },
+  "homepage": "https://github.com/JordanCoin/notioncli#readme",
+  "dependencies": {
+    "@notionhq/client": "^5.9.0",
+    "commander": "^14.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
