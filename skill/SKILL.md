@@ -166,6 +166,39 @@ notion comment <page-id> "Looks good, shipping this!"          # By page ID
 notion comment tasks "AI review complete ✅" --filter "Name=Ship feature"  # By alias + filter
 ```
 
+### Page Inspector
+
+```bash
+notion props tasks --filter "Name=Ship feature"    # Quick property dump
+notion me                                          # Show bot identity and owner
+```
+
+### Database Management
+
+```bash
+notion db-create <parent-page-id> "New DB" --prop "Name:title" --prop "Status:select"
+notion db-update tasks --add-prop "Rating:number"      # Add a column
+notion db-update tasks --remove-prop "Old Column"      # Remove a column
+notion db-update tasks --title "Renamed DB"            # Rename database
+notion templates tasks                                 # List page templates
+```
+
+### Moving Pages
+
+```bash
+notion move tasks --filter "Name=Done task" --to archive     # Move by alias
+notion move tasks --filter "Name=Done task" --to <page-id>   # Move to page
+```
+
+### File Uploads
+
+```bash
+notion upload tasks --filter "Name=Ship feature" ./report.pdf
+notion upload <page-id> ./screenshot.png
+```
+
+Supports images, PDFs, text files, documents. MIME types auto-detected from extension.
+
 ### Search
 
 ```bash
@@ -251,6 +284,29 @@ notion comment <page-id> "AI review complete ✅"
 ```bash
 notion delete tasks --filter "Name=Old task"
 notion delete workouts --filter "Date=2026-02-09"
+```
+
+### 9. Manage database schema
+
+```bash
+notion db-update tasks --add-prop "Priority:select"    # Add column
+notion db-update tasks --remove-prop "Old Field"       # Remove column
+notion db-create <parent-page-id> "New DB" --prop "Name:title" --prop "Status:select"
+```
+
+### 10. Move pages and upload files
+
+```bash
+notion move tasks --filter "Name=Done" --to archive
+notion upload tasks --filter "Name=Ship feature" ./report.pdf
+```
+
+### 11. Inspect and debug
+
+```bash
+notion me                                       # Check integration identity
+notion props tasks --filter "Name=Ship feature" # Quick property dump
+notion templates tasks                          # List available templates
 ```
 
 ## Property Type Reference

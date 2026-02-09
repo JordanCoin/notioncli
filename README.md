@@ -34,9 +34,20 @@ Zero UUIDs. One command. You're ready to go.
 
 ---
 
-## What's New (v1.1)
+## What's New
 
-notioncli now understands Notion as a **graph**, not just a table.
+### v1.2 — Database Management & File Uploads
+
+- 🤖 **`me`** — Show integration/bot identity and owner
+- 📦 **`move`** — Move pages between databases by alias
+- 📋 **`templates`** — List page templates available for a database
+- 🏗️ **`db-create`** — Create new databases with custom property schemas
+- ✏️ **`db-update`** — Add/remove columns, rename databases
+- 📎 **`upload`** — Upload files to pages (MIME-aware, supports images/docs/text)
+- 🔍 **`props`** — Quick page property inspector (cleaner than `get` for debugging)
+- 🐛 **Fixed** canonical `database_id` resolution for the 2025 dual-ID system
+
+### v1.1 — Relations, Rollups & Blocks
 
 - 🔗 **Relations** — `get` resolves linked page titles automatically. New `notion relations` command for exploring connected pages.
 - 📊 **Rollups** — Numbers, dates, and arrays are parsed into readable values. No more raw JSON blobs.
@@ -266,6 +277,86 @@ $ notion users
 $ notion comments tasks --filter "Name=Ship feature"
 $ notion comment tasks "Shipped! 🚀" --filter "Name=Ship feature"
 ```
+
+### `notion me` — Integration Identity
+
+```
+$ notion me
+Bot: Stargazer
+ID: 8fd93059-5e54-44a5-8efd-800069da9497
+Type: bot
+Owner: Workspace
+```
+
+### `notion props` — Quick Property Inspector
+
+A fast way to inspect a single page's properties:
+
+```
+$ notion props tasks --filter "Name=Ship v1.1"
+Page: a1b2c3d4-5678-90ab-cdef-1234567890ab
+URL: https://www.notion.so/...
+Name: Ship v1.1
+Status: Done
+Priority: High
+Date: 2026-02-09
+```
+
+### `notion move` — Move Pages Between Databases
+
+```bash
+$ notion move tasks --filter "Name=Archived task" --to archive
+✅ Moved page: a1b2c3d4…
+   URL: https://notion.so/...
+```
+
+Accepts alias + filter for the source page, and an alias or page ID for `--to`.
+
+### `notion templates` — List Database Templates
+
+```bash
+$ notion templates projects
+id        │ title              │ url
+──────────┼────────────────────┼──────────────────
+a1b2c3d4… │ Project Template   │ https://notion.so/...
+```
+
+### `notion db-create` — Create a Database
+
+```bash
+$ notion db-create <parent-page-id> "My New DB" --prop "Name:title" --prop "Status:select" --prop "Priority:number"
+✅ Created database: a1b2c3d4…
+   Title: My New DB
+   Properties: Name, Status, Priority
+```
+
+### `notion db-update` — Update Database Schema
+
+Add or remove columns, rename databases:
+
+```bash
+$ notion db-update projects --add-prop "Rating:number" --add-prop "Category:select"
+✅ Updated database: a1b2c3d4…
+   Added: Rating:number, Category:select
+
+$ notion db-update projects --remove-prop "Old Column"
+✅ Updated database: a1b2c3d4…
+   Removed: Old Column
+
+$ notion db-update projects --title "Renamed Projects"
+✅ Updated database: a1b2c3d4…
+   Title: Renamed Projects
+```
+
+### `notion upload` — Upload Files to Pages
+
+```bash
+$ notion upload tasks --filter "Name=Ship feature" ./screenshot.png
+✅ Uploaded: screenshot.png (142.3 KB)
+   Page: a1b2c3d4…
+```
+
+Supports images, PDFs, text files, documents, and more. MIME types are detected automatically from file extensions.
 
 ### `notion alias` — Manage Aliases
 
