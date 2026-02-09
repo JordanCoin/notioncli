@@ -1,0 +1,16 @@
+{
+  "id": "notioncli",
+  "name": "notioncli — Notion CLI",
+  "description": "Query databases, manage pages, and automate your Notion workspace from the terminal.",
+  "longDescription": "A powerful CLI for the Notion API built for both humans and AI agents. Auto-discovers databases and creates aliases so you never type UUIDs. Supports querying, filtering, sorting, creating, updating, deleting pages, comments, and appending content. Works with Notion's 2025 dual-ID API. Zero-UUID workflow via alias + filter on every command.",
+  "category": "Productivity",
+  "price": 0,
+  "icon": "📝",
+  "author": "JordanCoin",
+  "authorUrl": "https://github.com/JordanCoin",
+  "repository": "https://github.com/JordanCoin/notioncli",
+  "version": "1.0.0",
+  "tags": ["notion", "cli", "api", "database", "productivity", "workspace", "automation", "ai-agent"],
+  "requirements": ["Node.js >= 18", "Notion API key (free)"],
+  "optional": []
+}
