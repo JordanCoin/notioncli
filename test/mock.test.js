@@ -34,44 +34,61 @@ describe('Config management', () => {
 
   it('loadConfig returns empty config for missing file', () => {
     const config = loadConfig(configPath);
-    assert.deepEqual(config, { aliases: {} });
+    assert.equal(config.activeWorkspace, 'default');
+    assert.ok(config.workspaces.default);
+    assert.deepEqual(config.workspaces.default.aliases, {});
   });
 
   it('loadConfig returns empty config for corrupted file', () => {
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(configPath, 'not json at all!!!');
     const config = loadConfig(configPath);
-    assert.deepEqual(config, { aliases: {} });
+    assert.equal(config.activeWorkspace, 'default');
+    assert.ok(config.workspaces.default);
   });
 
   it('saveConfig creates directory and file', () => {
-    const config = { aliases: { test: { database_id: 'db1', data_source_id: 'ds1' } } };
+    const config = { activeWorkspace: 'default', workspaces: { default: { aliases: { test: { database_id: 'db1', data_source_id: 'ds1' } } } } };
     saveConfig(config, configDir, configPath);
     assert.ok(fs.existsSync(configPath));
   });
 
   it('loadConfig reads back saved config', () => {
     const config = {
-      apiKey: 'ntn_test_key',
-      aliases: {
-        projects: { database_id: 'db-123', data_source_id: 'ds-456' },
+      activeWorkspace: 'default',
+      workspaces: {
+        default: {
+          apiKey: 'ntn_test_key',
+          aliases: {
+            projects: { database_id: 'db-123', data_source_id: 'ds-456' },
+          },
+        },
       },
     };
     saveConfig(config, configDir, configPath);
     const loaded = loadConfig(configPath);
-    assert.equal(loaded.apiKey, 'ntn_test_key');
-    assert.deepEqual(loaded.aliases.projects, {
+    assert.equal(loaded.workspaces.default.apiKey, 'ntn_test_key');
+    assert.deepEqual(loaded.workspaces.default.aliases.projects, {
       database_id: 'db-123',
       data_source_id: 'ds-456',
     });
   });
 
   it('saveConfig overwrites existing config', () => {
-    saveConfig({ aliases: { a: { database_id: '1', data_source_id: '1' } } }, configDir, configPath);
-    saveConfig({ aliases: { b: { database_id: '2', data_source_id: '2' } } }, configDir, configPath);
+    saveConfig({ activeWorkspace: 'default', workspaces: { default: { aliases: { a: { database_id: '1', data_source_id: '1' } } } } }, configDir, configPath);
+    saveConfig({ activeWorkspace: 'default', workspaces: { default: { aliases: { b: { database_id: '2', data_source_id: '2' } } } } }, configDir, configPath);
     const loaded = loadConfig(configPath);
-    assert.ok(!loaded.aliases.a);
-    assert.ok(loaded.aliases.b);
+    assert.ok(!loaded.workspaces.default.aliases.a);
+    assert.ok(loaded.workspaces.default.aliases.b);
+  });
+
+  it('loadConfig auto-migrates old flat format', () => {
+    const oldConfig = { apiKey: 'ntn_old', aliases: { tasks: { database_id: 'db1', data_source_id: 'ds1' } } };
+    saveConfig(oldConfig, configDir, configPath);
+    const loaded = loadConfig(configPath);
+    assert.equal(loaded.activeWorkspace, 'default');
+    assert.equal(loaded.workspaces.default.apiKey, 'ntn_old');
+    assert.deepEqual(loaded.workspaces.default.aliases.tasks, { database_id: 'db1', data_source_id: 'ds1' });
   });
 });
 
@@ -108,14 +125,18 @@ describe('resolveDb logic (pure)', () => {
 
   it('known alias resolves to database_id + data_source_id', () => {
     const config = {
-      aliases: {
-        projects: { database_id: 'db-aaa', data_source_id: 'ds-bbb' },
+      activeWorkspace: 'default',
+      workspaces: {
+        default: {
+          aliases: {
+            projects: { database_id: 'db-aaa', data_source_id: 'ds-bbb' },
+          },
+        },
       },
     };
     saveConfig(config, configDir, configPath);
     const loaded = loadConfig(configPath);
-    const alias = 'projects';
-    const result = loaded.aliases[alias];
+    const result = loaded.workspaces.default.aliases.projects;
     assert.ok(result);
     assert.equal(result.database_id, 'db-aaa');
     assert.equal(result.data_source_id, 'ds-bbb');
@@ -132,9 +153,9 @@ describe('resolveDb logic (pure)', () => {
   });
 
   it('config with no aliases returns empty aliases object', () => {
-    saveConfig({ aliases: {} }, configDir, configPath);
+    saveConfig({ activeWorkspace: 'default', workspaces: { default: { aliases: {} } } }, configDir, configPath);
     const loaded = loadConfig(configPath);
-    assert.deepEqual(Object.keys(loaded.aliases), []);
+    assert.deepEqual(Object.keys(loaded.workspaces.default.aliases), []);
   });
 });
 

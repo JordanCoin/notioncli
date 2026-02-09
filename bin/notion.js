@@ -19,12 +19,35 @@ function saveConfig(config) {
 }
 
 /**
- * Resolve API key: env var → config file → error with setup instructions
+ * Get the active workspace name from --workspace flag or config.
+ */
+function getWorkspaceName() {
+  return program.opts().workspace || undefined;
+}
+
+/**
+ * Get the active workspace config { apiKey, aliases, name }.
+ */
+function getWorkspaceConfig() {
+  const config = loadConfig();
+  const ws = helpers.resolveWorkspace(config, getWorkspaceName());
+  if (ws.error) {
+    console.error(`Error: ${ws.error}`);
+    if (ws.available && ws.available.length > 0) {
+      console.error(`Available workspaces: ${ws.available.join(', ')}`);
+    }
+    process.exit(1);
+  }
+  return ws;
+}
+
+/**
+ * Resolve API key: env var → workspace config → error with setup instructions
  */
 function getApiKey() {
   if (process.env.NOTION_API_KEY) return process.env.NOTION_API_KEY;
-  const config = loadConfig();
-  if (config.apiKey) return config.apiKey;
+  const ws = getWorkspaceConfig();
+  if (ws.apiKey) return ws.apiKey;
   console.error('Error: No Notion API key found.');
   console.error('');
   console.error('Set it up with one of:');
@@ -40,14 +63,14 @@ function getApiKey() {
  * If given a raw UUID, we use it for both IDs (the SDK figures it out).
  */
 function resolveDb(aliasOrId) {
-  const config = loadConfig();
-  if (config.aliases && config.aliases[aliasOrId]) {
-    return config.aliases[aliasOrId];
+  const ws = getWorkspaceConfig();
+  if (ws.aliases && ws.aliases[aliasOrId]) {
+    return ws.aliases[aliasOrId];
   }
   if (UUID_REGEX.test(aliasOrId)) {
     return { database_id: aliasOrId, data_source_id: aliasOrId };
   }
-  const aliasNames = config.aliases ? Object.keys(config.aliases) : [];
+  const aliasNames = ws.aliases ? Object.keys(ws.aliases) : [];
   console.error(`Unknown database alias: "${aliasOrId}"`);
   if (aliasNames.length > 0) {
     console.error(`Available aliases: ${aliasNames.join(', ')}`);
@@ -64,14 +87,14 @@ function resolveDb(aliasOrId) {
  * Returns { pageId, dbIds } where dbIds is non-null when resolved via alias.
  */
 async function resolvePageId(aliasOrId, filterStr) {
-  const config = loadConfig();
-  if (config.aliases && config.aliases[aliasOrId]) {
+  const ws = getWorkspaceConfig();
+  if (ws.aliases && ws.aliases[aliasOrId]) {
     if (!filterStr) {
       console.error('When using an alias, --filter is required to identify a specific page.');
       console.error(`Example: notion update ${aliasOrId} --filter "Name=My Page" --prop "Status=Done"`);
       process.exit(1);
     }
-    const dbIds = config.aliases[aliasOrId];
+    const dbIds = ws.aliases[aliasOrId];
     const notion = getNotion();
     const filter = await buildFilter(dbIds, filterStr);
     const res = await notion.dataSources.query({
@@ -94,7 +117,7 @@ async function resolvePageId(aliasOrId, filterStr) {
   }
   // Check if it looks like a UUID — if not, it's probably a typo'd alias
   if (!UUID_REGEX.test(aliasOrId)) {
-    const aliasNames = config.aliases ? Object.keys(config.aliases) : [];
+    const aliasNames = ws.aliases ? Object.keys(ws.aliases) : [];
     console.error(`Unknown alias: "${aliasOrId}"`);
     if (aliasNames.length > 0) {
       console.error(`Available aliases: ${aliasNames.join(', ')}`);
@@ -203,8 +226,9 @@ async function buildFilter(dbIds, filterStr) {
 program
   .name('notion')
   .description('A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.')
-  .version('1.1.0')
-  .option('--json', 'Output raw JSON instead of formatted tables');
+  .version('1.2.0')
+  .option('--json', 'Output raw JSON instead of formatted tables')
+  .option('-w, --workspace <name>', 'Use a specific workspace profile');
 
 // ─── init ──────────────────────────────────────────────────────────────────────
 program
@@ -213,6 +237,7 @@ program
   .option('--key <api-key>', 'Notion integration API key (starts with ntn_)')
   .action(async (opts) => {
     const config = loadConfig();
+    const wsName = getWorkspaceName() || config.activeWorkspace || 'default';
     const apiKey = opts.key || process.env.NOTION_API_KEY;
 
     if (!apiKey) {
@@ -225,12 +250,16 @@ program
       console.error('  4. Share your databases with the integration');
       console.error('');
       console.error('Then run: notion init --key ntn_your_api_key');
+      console.error('  Or with workspace: notion init --workspace work --key ntn_your_api_key');
       process.exit(1);
     }
 
-    config.apiKey = apiKey;
+    if (!config.workspaces) config.workspaces = {};
+    if (!config.workspaces[wsName]) config.workspaces[wsName] = { aliases: {} };
+    config.workspaces[wsName].apiKey = apiKey;
+    config.activeWorkspace = wsName;
     saveConfig(config);
-    console.log(`✅ API key saved to ${CONFIG_PATH}`);
+    console.log(`✅ API key saved to workspace "${wsName}" in ${CONFIG_PATH}`);
     console.log('');
 
     // Discover databases
@@ -247,7 +276,7 @@ program
         return;
       }
 
-      if (!config.aliases) config.aliases = {};
+      const aliases = config.workspaces[wsName].aliases || {};
 
       console.log(`Found ${res.results.length} database${res.results.length !== 1 ? 's' : ''}:\n`);
 
@@ -264,12 +293,12 @@ program
         // Avoid collisions — append a number if needed
         let finalSlug = slug;
         let counter = 2;
-        while (config.aliases[finalSlug] && config.aliases[finalSlug].data_source_id !== dsId) {
+        while (aliases[finalSlug] && aliases[finalSlug].data_source_id !== dsId) {
           finalSlug = `${slug}-${counter}`;
           counter++;
         }
 
-        config.aliases[finalSlug] = {
+        aliases[finalSlug] = {
           database_id: dbId,
           data_source_id: dsId,
         };
@@ -278,9 +307,10 @@ program
         added.push(finalSlug);
       }
 
+      config.workspaces[wsName].aliases = aliases;
       saveConfig(config);
       console.log('');
-      console.log(`${added.length} alias${added.length !== 1 ? 'es' : ''} saved automatically.`);
+      console.log(`${added.length} alias${added.length !== 1 ? 'es' : ''} saved to workspace "${wsName}".`);
       console.log('');
       console.log('Ready! Try:');
       if (added.length > 0) {
@@ -308,7 +338,9 @@ alias
   .description('Add a database alias (auto-discovers data_source_id)')
   .action(async (name, databaseId) => {
     const config = loadConfig();
-    if (!config.aliases) config.aliases = {};
+    const wsName = getWorkspaceName() || config.activeWorkspace || 'default';
+    if (!config.workspaces[wsName]) config.workspaces[wsName] = { aliases: {} };
+    const aliases = config.workspaces[wsName].aliases || {};
 
     // Try to discover the data_source_id by searching for this database
     const notion = getNotion();
@@ -330,7 +362,7 @@ alias
         dataSourceId = match.id;
         // The database_id might differ from data_source_id — check parent
         const dbId = (match.parent && match.parent.type === 'database_id' && match.parent.database_id) || match.database_id || databaseId;
-        config.aliases[name] = {
+        aliases[name] = {
           database_id: dbId,
           data_source_id: dataSourceId,
         };
@@ -340,7 +372,7 @@ alias
         console.log(`   data_source_id: ${dataSourceId}`);
       } else {
         // Couldn't find via search — use the ID for both
-        config.aliases[name] = {
+        aliases[name] = {
           database_id: databaseId,
           data_source_id: databaseId,
         };
@@ -349,7 +381,7 @@ alias
       }
     } catch (err) {
       // Fallback: use same ID for both
-      config.aliases[name] = {
+      aliases[name] = {
         database_id: databaseId,
         data_source_id: databaseId,
       };
@@ -357,6 +389,7 @@ alias
       console.log(`   (Auto-discovery failed: ${err.message})`);
     }
 
+    config.workspaces[wsName].aliases = aliases;
     saveConfig(config);
   });
 
@@ -364,16 +397,17 @@ alias
   .command('list')
   .description('Show all configured database aliases')
   .action(() => {
-    const config = loadConfig();
-    const aliases = config.aliases || {};
+    const ws = getWorkspaceConfig();
+    const aliases = ws.aliases || {};
     const names = Object.keys(aliases);
 
     if (names.length === 0) {
-      console.log('No aliases configured.');
+      console.log(`No aliases in workspace "${ws.name}".`);
       console.log('Add one with: notion alias add <name> <database-id>');
       return;
     }
 
+    console.log(`Workspace: ${ws.name}\n`);
     const rows = names.map(name => ({
       alias: name,
       database_id: aliases[name].database_id,
@@ -387,17 +421,20 @@ alias
   .description('Remove a database alias')
   .action((name) => {
     const config = loadConfig();
-    if (!config.aliases || !config.aliases[name]) {
-      console.error(`Alias "${name}" not found.`);
-      const names = config.aliases ? Object.keys(config.aliases) : [];
+    const wsName = getWorkspaceName() || config.activeWorkspace || 'default';
+    const aliases = config.workspaces[wsName]?.aliases || {};
+    if (!aliases[name]) {
+      console.error(`Alias "${name}" not found in workspace "${wsName}".`);
+      const names = Object.keys(aliases);
       if (names.length > 0) {
         console.error(`Available: ${names.join(', ')}`);
       }
       process.exit(1);
     }
-    delete config.aliases[name];
+    delete aliases[name];
+    config.workspaces[wsName].aliases = aliases;
     saveConfig(config);
-    console.log(`✅ Removed alias "${name}"`);
+    console.log(`✅ Removed alias "${name}" from workspace "${wsName}"`);
   });
 
 alias
@@ -405,22 +442,104 @@ alias
   .description('Rename a database alias')
   .action((oldName, newName) => {
     const config = loadConfig();
-    if (!config.aliases || !config.aliases[oldName]) {
-      console.error(`Alias "${oldName}" not found.`);
-      const names = config.aliases ? Object.keys(config.aliases) : [];
+    const wsName = getWorkspaceName() || config.activeWorkspace || 'default';
+    const aliases = config.workspaces[wsName]?.aliases || {};
+    if (!aliases[oldName]) {
+      console.error(`Alias "${oldName}" not found in workspace "${wsName}".`);
+      const names = Object.keys(aliases);
       if (names.length > 0) {
         console.error(`Available: ${names.join(', ')}`);
       }
       process.exit(1);
     }
-    if (config.aliases[newName]) {
+    if (aliases[newName]) {
       console.error(`Alias "${newName}" already exists. Remove it first or pick a different name.`);
       process.exit(1);
     }
-    config.aliases[newName] = config.aliases[oldName];
-    delete config.aliases[oldName];
+    aliases[newName] = aliases[oldName];
+    delete aliases[oldName];
+    config.workspaces[wsName].aliases = aliases;
     saveConfig(config);
-    console.log(`✅ Renamed "${oldName}" → "${newName}"`);
+    console.log(`✅ Renamed "${oldName}" → "${newName}" in workspace "${wsName}"`);
+  });
+
+// ─── workspace ─────────────────────────────────────────────────────────────────
+const workspace = program
+  .command('workspace')
+  .description('Manage workspace profiles (multiple Notion accounts)');
+
+workspace
+  .command('add <name>')
+  .description('Add a new workspace profile')
+  .requiredOption('--key <api-key>', 'Notion API key for this workspace')
+  .action(async (name, opts) => {
+    const config = loadConfig();
+    if (config.workspaces[name]) {
+      console.error(`Workspace "${name}" already exists. Use "notion init --workspace ${name} --key ..." to update it.`);
+      process.exit(1);
+    }
+    config.workspaces[name] = { apiKey: opts.key, aliases: {} };
+    saveConfig(config);
+    console.log(`✅ Added workspace "${name}"`);
+    console.log('');
+    console.log(`Discover databases: notion init --workspace ${name}`);
+    console.log(`Or set as active:   notion workspace use ${name}`);
+  });
+
+workspace
+  .command('list')
+  .description('List all workspace profiles')
+  .action(() => {
+    const config = loadConfig();
+    const names = Object.keys(config.workspaces || {});
+    if (names.length === 0) {
+      console.log('No workspaces configured. Run: notion init --key ntn_...');
+      return;
+    }
+    for (const name of names) {
+      const ws = config.workspaces[name];
+      const active = name === config.activeWorkspace ? ' ← active' : '';
+      const aliasCount = Object.keys(ws.aliases || {}).length;
+      const keyPreview = ws.apiKey ? `${ws.apiKey.slice(0, 8)}...` : '(no key)';
+      console.log(`  ${name}${active}`);
+      console.log(`    Key: ${keyPreview} | Aliases: ${aliasCount}`);
+    }
+  });
+
+workspace
+  .command('use <name>')
+  .description('Set the active workspace')
+  .action((name) => {
+    const config = loadConfig();
+    if (!config.workspaces[name]) {
+      console.error(`Workspace "${name}" not found.`);
+      const names = Object.keys(config.workspaces || {});
+      if (names.length > 0) {
+        console.error(`Available: ${names.join(', ')}`);
+      }
+      process.exit(1);
+    }
+    config.activeWorkspace = name;
+    saveConfig(config);
+    console.log(`✅ Active workspace: ${name}`);
+  });
+
+workspace
+  .command('remove <name>')
+  .description('Remove a workspace profile')
+  .action((name) => {
+    const config = loadConfig();
+    if (!config.workspaces[name]) {
+      console.error(`Workspace "${name}" not found.`);
+      process.exit(1);
+    }
+    if (name === config.activeWorkspace) {
+      console.error(`Cannot remove the active workspace. Switch first: notion workspace use <other>`);
+      process.exit(1);
+    }
+    delete config.workspaces[name];
+    saveConfig(config);
+    console.log(`✅ Removed workspace "${name}"`);
   });
 
 // ─── search ────────────────────────────────────────────────────────────────────
@@ -1085,9 +1204,9 @@ program
 
       // Resolve --to target
       let parent;
-      const config = loadConfig();
-      if (config.aliases && config.aliases[opts.to]) {
-        const db = config.aliases[opts.to];
+      const ws = getWorkspaceConfig();
+      if (ws.aliases && ws.aliases[opts.to]) {
+        const db = ws.aliases[opts.to];
         // pages.move() requires data_source_id parent, not database_id
         parent = { type: 'data_source_id', data_source_id: db.data_source_id };
       } else if (UUID_REGEX.test(opts.to)) {
@@ -1095,7 +1214,7 @@ program
         parent = { type: 'page_id', page_id: opts.to };
       } else {
         console.error(`Unknown destination: "${opts.to}". Use a page ID or database alias.`);
-        const aliasNames = config.aliases ? Object.keys(config.aliases) : [];
+        const aliasNames = ws.aliases ? Object.keys(ws.aliases) : [];
         if (aliasNames.length > 0) {
           console.error(`Available aliases: ${aliasNames.join(', ')}`);
         }
@@ -1207,8 +1326,10 @@ program
       // Auto-create alias if requested
       if (opts.alias) {
         const config = loadConfig();
-        if (!config.aliases) config.aliases = {};
-        config.aliases[opts.alias] = {
+        const wsName = getWorkspaceName() || config.activeWorkspace || 'default';
+        if (!config.workspaces[wsName]) config.workspaces[wsName] = { aliases: {} };
+        if (!config.workspaces[wsName].aliases) config.workspaces[wsName].aliases = {};
+        config.workspaces[wsName].aliases[opts.alias] = {
           database_id: res.database_id || res.id,
           data_source_id: res.id,
         };

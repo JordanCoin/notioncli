@@ -1,6 +1,6 @@
 ---
 name: notion
-description: Notion API for creating and managing pages, databases, blocks, relations, and rollups via the notioncli CLI tool.
+description: Notion API for creating and managing pages, databases, blocks, relations, rollups, and multi-workspace profiles via the notioncli CLI tool.
 homepage: https://github.com/JordanCoin/notioncli
 metadata:
   openclaw:
@@ -326,6 +326,27 @@ When using `--prop key=value`, the CLI auto-detects the property type from the d
 | `email` | `Contact=user@example.com` | Email address |
 | `phone_number` | `Phone=+1234567890` | Phone number string |
 | `status` | `Status=In Progress` | Status property |
+
+## Multi-Workspace Profiles
+
+Manage multiple Notion accounts from one CLI:
+
+```bash
+notion workspace add work --key ntn_work_key       # Add workspace
+notion workspace add personal --key ntn_personal    # Add another
+notion workspace list                               # Show all
+notion workspace use work                           # Switch active
+notion workspace remove old                         # Remove one
+
+# Per-command override
+notion query tasks --workspace personal
+notion -w work add projects --prop "Name=Q2 Plan"
+
+# Init with workspace
+notion init --workspace work --key ntn_work_key
+```
+
+Aliases are scoped per workspace. Old single-key configs auto-migrate to a "default" workspace.
 
 ## Notion API 2025 — Dual IDs
 

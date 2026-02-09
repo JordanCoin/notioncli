@@ -36,8 +36,9 @@ Zero UUIDs. One command. You're ready to go.
 
 ## What's New
 
-### v1.2 — Database Management & File Uploads
+### v1.2 — Multi-Workspace, Database Management & File Uploads
 
+- 🏢 **Multi-workspace** — Named profiles for multiple Notion accounts (`workspace add/use/list/remove`, `--workspace` flag)
 - 🤖 **`me`** — Show integration/bot identity and owner
 - 📦 **`move`** — Move pages between databases by alias
 - 📋 **`templates`** — List page templates available for a database
@@ -368,6 +369,38 @@ notion alias rename project-tracker projects   # Rename one
 notion alias add tasks <database-id>           # Add manually
 notion alias remove tasks                      # Remove one
 ```
+
+### `notion workspace` — Multi-Workspace Profiles
+
+Manage multiple Notion accounts (work, personal, client projects):
+
+```bash
+# Add a workspace
+notion workspace add work --key ntn_your_work_key
+notion workspace add personal --key ntn_your_personal_key
+
+# List workspaces
+notion workspace list
+#   default ← active
+#     Key: ntn_3871... | Aliases: 5
+#   work
+#     Key: ntn_ab12... | Aliases: 0
+
+# Switch active workspace
+notion workspace use work
+
+# Discover databases for a workspace
+notion init --workspace work
+
+# Per-command override (no switching needed)
+notion query tasks --workspace personal
+notion -w work add projects --prop "Name=Q2 Plan"
+
+# Remove a workspace
+notion workspace remove old-client
+```
+
+Aliases are scoped per workspace — same alias name in different workspaces won't collide. Old single-key configs are auto-migrated to a "default" workspace.
 
 ### `--json` — Raw JSON Output
 
