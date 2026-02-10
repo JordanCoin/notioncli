@@ -137,11 +137,35 @@ async function resolvePageId(aliasOrId, filterInput) {
 // ─── Lazy Notion client ────────────────────────────────────────────────────────
 
 let _notion = null;
+let _notionWithRetry = null;
+
+function wrapNotionClient(notion) {
+  const wrap = target => new Proxy(target, {
+    get(obj, prop) {
+      const value = obj[prop];
+      if (typeof value === 'function') {
+        return (...args) => withRetry(() => value.apply(obj, args));
+      }
+      if (value && typeof value === 'object') {
+        return wrap(value);
+      }
+      return value;
+    },
+  });
+  return wrap(notion);
+}
+
+function createNotionClient(apiKey) {
+  const notion = new Client({ auth: apiKey });
+  return wrapNotionClient(notion);
+}
+
 function getNotion() {
   if (!_notion) {
     _notion = new Client({ auth: getApiKey() });
+    _notionWithRetry = wrapNotionClient(_notion);
   }
-  return _notion;
+  return _notionWithRetry;
 }
 
 // ─── Helpers (imported from lib/helpers.js) ────────────────────────────────────
@@ -164,6 +188,8 @@ const {
   extractDynamicProps,
   UUID_REGEX,
   paginate,
+  withRetry,
+  getNotionApiErrorDetails,
 } = helpers;
 
 /** Check if --json flag is set anywhere in the command chain */
@@ -184,7 +210,21 @@ async function runCommand(name, fn) {
   try {
     await fn();
   } catch (err) {
-    console.error(`${name} failed:`, err.message);
+    const details = getNotionApiErrorDetails(err);
+    if (details) {
+      console.error(`${name} failed: Notion API error`);
+      if (details.status !== undefined) console.error(`Status: ${details.status}`);
+      if (details.code) console.error(`Code: ${details.code}`);
+      if (details.message) console.error(`Message: ${details.message}`);
+      if (details.body) {
+        const bodyText = typeof details.body === 'string'
+          ? details.body
+          : JSON.stringify(details.body, null, 2);
+        console.error(`Body: ${bodyText}`);
+      }
+    } else {
+      console.error(`${name} failed:`, err.message);
+    }
     process.exit(1);
   }
 }
@@ -300,7 +340,7 @@ program
     console.log('');
 
     // Discover databases
-    const notion = new Client({ auth: apiKey });
+    const notion = createNotionClient(apiKey);
     try {
       const res = await notion.search({
         filter: { value: 'data_source', property: 'object' },
