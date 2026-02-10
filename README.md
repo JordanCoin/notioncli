@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
 
-A CLI for the Notion API. Aliases instead of UUIDs, property names as flags, full CRUD. Built for humans and AI agents.
+A CLI for the Notion API. Aliases instead of UUIDs, property names as flags, full CRUD, automatic pagination, rate limit retry. Built for humans and AI agents.
 
 ```bash
 npm install -g @jordancoin/notioncli
@@ -110,6 +110,10 @@ notion query tasks --filter Status=Active --filter Priority=High
 # Relative dates
 notion query tasks --filter "Due=today"
 notion query tasks --filter "Created>=last_week"
+
+# Values containing operators (parsed correctly)
+notion query tasks --filter "Description=score>=90"
+notion query tasks --filter 'Notes="contains quotes"'
 ```
 
 ### Dynamic property flags
@@ -216,9 +220,15 @@ notion workspace list   # see workspaces
 
 ---
 
+## Reliability
+
+- **Automatic pagination** — All list endpoints fetch every result by default. Use `--limit` to cap.
+- **Rate limit retry** — 429 responses trigger exponential backoff with jitter (up to 5 attempts). Transparent — no flags needed.
+- **Input validation** — Numbers, dates, URLs, and emails are validated before hitting the API. Clear error messages instead of cryptic 400s.
+
 ## Technical Details
 
-For API internals, the 2025 dual-ID system, architecture decisions, and testing: see **[TECHNICAL.md](./TECHNICAL.md)**.
+For API internals, the 2025 dual-ID system, modular architecture, and testing (213 tests): see **[TECHNICAL.md](./TECHNICAL.md)**.
 
 ---
 

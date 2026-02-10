@@ -43,6 +43,35 @@ The `dataSources` namespace provides: `retrieve`, `query`, `create`, `update`, `
 
 ## Architecture
 
+### Modular Command Structure (v1.3.1)
+
+`bin/notion.js` is a thin orchestrator (~28 lines). All logic lives in modules:
+
+```
+bin/notion.js          — CLI entry point, registers commands
+lib/context.js         — Shared context factory (config, auth, Notion client, schema helpers)
+lib/helpers.js         — Re-exports all lib modules
+lib/format.js          — Output formatting (table, CSV, YAML, JSON), property building
+lib/filters.js         — Filter parsing, operator detection, compound filters
+lib/markdown.js        — Markdown ↔ Notion blocks, CSV parsing, inline formatting
+lib/config.js          — Config load/save, workspace resolution
+lib/paginate.js        — Cursor-based pagination
+lib/retry.js           — Exponential backoff with jitter for rate limits
+commands/config.js     — init, alias (add/remove/list/rename), workspace (add/list/use/remove)
+commands/search.js     — search
+commands/query.js      — query with filters, sorting, pagination
+commands/crud.js       — add, update, delete, get
+commands/blocks.js     — blocks, block-edit, block-delete, append
+commands/database.js   — dbs, db-create, db-update, templates
+commands/users.js      — users, user, me
+commands/comments.js   — comments, comment
+commands/pages.js      — relations, move, props
+commands/import-export.js — import, export
+commands/upload.js     — file upload
+```
+
+Each command module exports `register(program, ctx)` where `ctx` is the shared context from `createContext(program)`. The context provides config helpers, the lazy Notion client, schema resolution, and all formatting utilities.
+
 ### Alias Resolution
 
 Every command that targets a database goes through `resolveDb(alias_or_id)`:
@@ -77,11 +106,40 @@ Relative dates (`today`, `yesterday`, `tomorrow`, `last_week`, `next_week`) are 
 
 Multiple `--filter` flags combine with AND logic via `buildCompoundFilter()`.
 
+### Pagination (v1.3.1)
+
+`paginate()` in `lib/paginate.js` is a generic cursor-based pagination helper. It wraps any Notion API call that returns `{ results, has_more, next_cursor }` and accumulates all pages:
+
+- Default behavior fetches all results (no limit)
+- `--limit N` caps results and emits a stderr warning if truncated
+- Used by: search, query, blocks, dbs, users, comments
+
+### Rate Limit Retry (v1.3.1)
+
+`withRetry()` in `lib/retry.js` wraps API calls with exponential backoff + jitter on 429 responses. The Notion client is wrapped via `wrapNotionClient()` which uses a JS Proxy to transparently intercept all method calls — no code changes needed per-endpoint.
+
+Default: 5 attempts, 1s base delay, 2x multiplier, ±25% jitter.
+
+### Input Validation (v1.3.1)
+
+`buildPropValue()` in `lib/format.js` validates before hitting the API:
+
+- **Numbers**: rejects NaN values
+- **Dates**: validates against ISO 8601 (YYYY-MM-DD or full datetime) via regex + Date.parse
+- **URLs**: requires `http://` or `https://` prefix
+- **Emails**: requires `@` character
+
+Returns `{ error: "..." }` objects; the caller prints a clear message and exits.
+
 ### Markdown ↔ Blocks
 
-`markdownToBlocks()` parses: headings (h1-h3), bullet lists, numbered lists, todo items, code blocks (fenced with language), blockquotes, dividers (`---`), and paragraphs with inline formatting (bold, italic, code, links).
+`markdownToBlocks()` parses: headings (h1-h3), bullet lists (with nested indentation via stack-based tracking), numbered lists, todo items, code blocks (fenced with language), blockquotes, dividers (`---`), and paragraphs with inline formatting (bold, italic, code, links).
 
-`blocksToMarkdown()` reverses the process for export.
+`blocksToMarkdown()` reverses the process, preserving rich text annotations (bold → `**`, italic → `*`, code → backticks, strikethrough → `~~`, links → `[text](url)`) via `richTextToMarkdown()`.
+
+### CSV Parsing (v1.3.1)
+
+`parseCsv()` uses character-by-character scanning to correctly handle quoted fields containing newlines, commas, and escaped quotes (`""`). Previously split on `\n` which broke multiline fields.
 
 ### Multi-Workspace
 
@@ -101,7 +159,9 @@ Old flat configs (`{ apiKey, aliases }`) are auto-migrated to `{ workspaces: { d
 
 ## Testing
 
-- **`test/unit.test.js`** — Pure function tests (no API calls). Covers all helpers: parsing, formatting, filtering, markdown, CSV.
+213 tests across 27 suites, zero dependencies (`node:test` + `node:assert`):
+
+- **`test/unit.test.js`** — Pure function tests (no API calls). Covers: property formatting (38 types), filter building (26 operators), markdown parsing (10 block types + nested bullets), CSV parsing (multiline fields), inline formatting, pagination, retry logic, input validation, dynamic prop extraction.
 - **`test/mock.test.js`** — Command logic with mocked Notion client. Config management, filter building, schema resolution.
 - **`test/integration.test.js`** — Live API tests (requires `NOTION_API_KEY`). Skipped in CI.
 

@@ -386,9 +386,16 @@ Aliases are scoped per workspace. Old single-key configs auto-migrate to a "defa
 
 The Notion API (2025-09-03) uses dual IDs for databases: a `database_id` and a `data_source_id`. notioncli handles this automatically — when you run `notion init` or `notion alias add`, both IDs are discovered and stored. You never need to think about it.
 
+## Reliability
+
+- **Automatic pagination** — All list commands fetch every result by default. Use `--limit N` to cap.
+- **Rate limit retry** — 429 responses trigger automatic exponential backoff with jitter (up to 5 attempts). No flags needed.
+- **Input validation** — Invalid numbers, dates, URLs, and emails are caught before the API call with clear error messages.
+
 ## Troubleshooting
 
 - **"No Notion API key found"** — Run `notion init --key ntn_...` or `export NOTION_API_KEY=ntn_...`
 - **"Unknown database alias"** — Run `notion alias list` to see available aliases, or `notion init` to rediscover
 - **"Not found" errors** — Make sure the database/page is shared with your integration in Notion
 - **Filter/sort property not found** — Property names are case-insensitive; run `notion --json query <alias> --limit 1` to see available properties
+- **"Invalid number/date/url/email"** — Input validation caught a bad value. Check the format (dates: YYYY-MM-DD, URLs: must start with http(s)://, emails: must contain @)
