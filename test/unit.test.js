@@ -22,6 +22,7 @@ const {
   extractDynamicProps,
   UUID_REGEX,
   paginate,
+  withRetry,
 } = require('../lib/helpers');
 
 // ─── richTextToPlain ───────────────────────────────────────────────────────────
@@ -1144,5 +1145,88 @@ describe('paginate', () => {
     assert.deepEqual(results, [1, 2, 3]);
     assert.equal(truncated, false);
     assert.equal(has_more, false);
+  });
+});
+
+// ─── withRetry ────────────────────────────────────────────────────────────────
+
+describe('withRetry', () => {
+  function rateLimitError() {
+    const err = new Error('Rate limited');
+    err.status = 429;
+    err.code = 'rate_limited';
+    err.body = { message: 'Rate limited' };
+    return err;
+  }
+
+  it('retries rate limit errors and eventually succeeds', async () => {
+    let calls = 0;
+    const delays = [];
+    const fn = async () => {
+      calls += 1;
+      if (calls < 3) {
+        throw rateLimitError();
+      }
+      return 'ok';
+    };
+
+    const result = await withRetry(fn, {
+      maxAttempts: 3,
+      baseDelayMs: 1000,
+      jitter: false,
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+      onRetry: () => {},
+    });
+
+    assert.equal(result, 'ok');
+    assert.equal(calls, 3);
+    assert.deepEqual(delays, [1000, 2000]);
+  });
+
+  it('stops after max attempts on repeated rate limits', async () => {
+    let calls = 0;
+    const fn = async () => {
+      calls += 1;
+      throw rateLimitError();
+    };
+
+    await assert.rejects(
+      () => withRetry(fn, {
+        maxAttempts: 3,
+        baseDelayMs: 10,
+        jitter: false,
+        sleep: async () => {},
+        onRetry: () => {},
+      }),
+      /Rate limited/,
+    );
+
+    assert.equal(calls, 3);
+  });
+
+  it('does not retry non-rate-limit errors', async () => {
+    let calls = 0;
+    const err = new Error('Boom');
+    err.status = 400;
+    err.code = 'invalid_request';
+    err.body = { message: 'Boom' };
+
+    await assert.rejects(
+      () => withRetry(async () => {
+        calls += 1;
+        throw err;
+      }, {
+        maxAttempts: 3,
+        baseDelayMs: 10,
+        jitter: false,
+        sleep: async () => {},
+        onRetry: () => {},
+      }),
+      /Boom/,
+    );
+
+    assert.equal(calls, 1);
   });
 });
