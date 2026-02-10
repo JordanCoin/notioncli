@@ -1308,18 +1308,48 @@ program
         properties['Name'] = { title: {} };
       }
 
+      // 2025 API: databases.create() only handles title property reliably.
+      // Non-title properties must be added via dataSources.update() after creation.
+      const titleProps = {};
+      const extraProps = {};
+      for (const [name, prop] of Object.entries(properties)) {
+        if (prop.title) {
+          titleProps[name] = prop;
+        } else {
+          extraProps[name] = prop;
+        }
+      }
+      // Ensure title property exists in create call
+      if (Object.keys(titleProps).length === 0) {
+        titleProps['Name'] = { title: {} };
+      }
+
       const res = await notion.databases.create({
         parent: { type: 'page_id', page_id: parentPageId },
         title: [{ text: { content: title } }],
-        properties,
+        properties: titleProps,
       });
+
+      // Extract correct dual IDs from response
+      const databaseId = res.id;
+      const dataSourceId = (res.data_sources && res.data_sources[0])
+        ? res.data_sources[0].id
+        : res.id;
+
+      // Add non-title properties via dataSources.update()
+      if (Object.keys(extraProps).length > 0) {
+        await notion.dataSources.update({
+          data_source_id: dataSourceId,
+          properties: extraProps,
+        });
+      }
 
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
         return;
       }
 
-      console.log(`✅ Created database: ${res.id.slice(0, 8)}…`);
+      console.log(`✅ Created database: ${databaseId.slice(0, 8)}…`);
       console.log(`   Title: ${title}`);
       console.log(`   Properties: ${Object.keys(properties).join(', ')}`);
 
@@ -1330,8 +1360,8 @@ program
         if (!config.workspaces[wsName]) config.workspaces[wsName] = { aliases: {} };
         if (!config.workspaces[wsName].aliases) config.workspaces[wsName].aliases = {};
         config.workspaces[wsName].aliases[opts.alias] = {
-          database_id: res.database_id || res.id,
-          data_source_id: res.id,
+          database_id: databaseId,
+          data_source_id: dataSourceId,
         };
         saveConfig(config);
         console.log(`   Alias: ${opts.alias}`);
@@ -1354,10 +1384,14 @@ program
       const notion = getNotion();
       const dbIds = resolveDb(db);
 
-      // databases.update() requires the canonical database_id, which may differ
-      // from data_source_id. Resolve via dataSources.retrieve().parent.database_id.
+      // 2025 API: property changes go through dataSources.update(), NOT databases.update().
+      // databases.update() silently ignores property modifications.
+      // Title changes still go through databases.update().
       let canonicalId = dbIds.database_id;
-      if (canonicalId === dbIds.data_source_id) {
+      const dataSourceId = dbIds.data_source_id;
+
+      // Resolve canonical database_id if both IDs are the same
+      if (canonicalId === dataSourceId) {
         try {
           const ds = await notion.dataSources.retrieve({ data_source_id: canonicalId });
           if (ds.parent && ds.parent.type === 'database_id') {
@@ -1366,14 +1400,10 @@ program
         } catch (_) { /* fall through with what we have */ }
       }
 
-      const params = { database_id: canonicalId };
-
-      if (opts.title) {
-        params.title = [{ text: { content: opts.title } }];
-      }
-
+      // Build property changes for dataSources.update()
+      let propChanges = null;
       if (opts.addProp.length > 0 || opts.removeProp.length > 0) {
-        params.properties = {};
+        propChanges = {};
 
         for (const kv of opts.addProp) {
           const colonIdx = kv.indexOf(':');
@@ -1383,15 +1413,31 @@ program
           }
           const name = kv.slice(0, colonIdx);
           const type = kv.slice(colonIdx + 1).toLowerCase();
-          params.properties[name] = { [type]: {} };
+          propChanges[name] = { [type]: {} };
         }
 
         for (const name of opts.removeProp) {
-          params.properties[name] = null;
+          propChanges[name] = null;
         }
       }
 
-      const res = await notion.databases.update(params);
+      let res;
+
+      // Title changes go through databases.update()
+      if (opts.title) {
+        res = await notion.databases.update({
+          database_id: canonicalId,
+          title: [{ text: { content: opts.title } }],
+        });
+      }
+
+      // Property changes go through dataSources.update()
+      if (propChanges) {
+        res = await notion.dataSources.update({
+          data_source_id: dataSourceId,
+          properties: propChanges,
+        });
+      }
 
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
