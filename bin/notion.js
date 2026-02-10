@@ -86,10 +86,14 @@ function resolveDb(aliasOrId) {
  *
  * Returns { pageId, dbIds } where dbIds is non-null when resolved via alias.
  */
-async function resolvePageId(aliasOrId, filterStr) {
+async function resolvePageId(aliasOrId, filterInput) {
+  // Normalize filter: accept string or array, extract first non-empty
+  const filterStr = Array.isArray(filterInput)
+    ? (filterInput.length > 0 ? filterInput : null)
+    : filterInput;
   const ws = getWorkspaceConfig();
   if (ws.aliases && ws.aliases[aliasOrId]) {
-    if (!filterStr) {
+    if (!filterStr || (Array.isArray(filterStr) && filterStr.length === 0)) {
       console.error('When using an alias, --filter is required to identify a specific page.');
       console.error(`Example: notion update ${aliasOrId} --filter "Name=My Page" --prop "Status=Done"`);
       process.exit(1);
@@ -152,6 +156,12 @@ const {
   formatYaml,
   outputFormatted,
   buildFilterFromSchema,
+  buildCompoundFilter,
+  markdownToBlocks,
+  blocksToMarkdown,
+  parseCsv,
+  kebabToProperty,
+  extractDynamicProps,
   UUID_REGEX,
 } = helpers;
 
@@ -207,10 +217,11 @@ async function buildProperties(dbIds, props) {
   return properties;
 }
 
-/** Parse filter string key=value into a Notion filter object */
-async function buildFilter(dbIds, filterStr) {
+/** Parse filter string(s) into a Notion filter object. Accepts string or array. */
+async function buildFilter(dbIds, filterInput) {
   const schema = await getDbSchema(dbIds);
-  const result = buildFilterFromSchema(schema, filterStr);
+  const filters = Array.isArray(filterInput) ? filterInput : [filterInput];
+  const result = buildCompoundFilter(schema, filters);
   if (result.error) {
     console.error(result.error);
     if (result.available) {
@@ -226,7 +237,7 @@ async function buildFilter(dbIds, filterStr) {
 program
   .name('notion')
   .description('A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.')
-  .version('1.2.0')
+  .version('1.3.0')
   .option('--json', 'Output raw JSON instead of formatted tables')
   .option('-w, --workspace <name>', 'Use a specific workspace profile');
 
@@ -584,7 +595,7 @@ program
 program
   .command('query <database>')
   .description('Query a database by alias or ID (e.g. notion query projects --filter Status=Active)')
-  .option('--filter <key=value>', 'Filter by property (e.g. Status=Active)')
+  .option('--filter <key=value...>', 'Filter by property — repeatable, supports operators: =, !=, >, <, >=, <= (e.g. --filter Status=Active --filter Day>5)', (v, prev) => prev.concat([v]), [])
   .option('--sort <key:direction>', 'Sort by property (e.g. Date:desc)')
   .option('--limit <n>', 'Max results (default: 100, max: 100)', '100')
   .option('--output <format>', 'Output format: table, csv, json, yaml (default: table)')
@@ -597,7 +608,7 @@ program
         page_size: Math.min(parseInt(opts.limit), 100),
       };
 
-      if (opts.filter) {
+      if (opts.filter && opts.filter.length > 0) {
         params.filter = await buildFilter(dbIds, opts.filter);
       }
 
@@ -639,23 +650,71 @@ program
 // ─── add ───────────────────────────────────────────────────────────────────────
 program
   .command('add <database>')
-  .description('Add a new page to a database (e.g. notion add projects --prop "Name=New Task")')
-  .option('--prop <key=value...>', 'Property value — repeatable (e.g. --prop "Name=Hello" --prop "Status=Todo")', (v, prev) => prev.concat([v]), [])
+  .description('Add a new page to a database (e.g. notion add tasks --name "Ship it" --status "Done")')
+  .option('--prop <key=value...>', 'Property value — repeatable (e.g. --prop "Name=Hello")', (v, prev) => prev.concat([v]), [])
+  .option('--from <file>', 'Import content from a .md file as page body')
+  .allowUnknownOption()
+  .allowExcessArguments()
   .action(async (db, opts, cmd) => {
     try {
       const notion = getNotion();
       const dbIds = resolveDb(db);
-      const properties = await buildProperties(dbIds, opts.prop);
+
+      // Merge --prop flags with dynamic property flags (--name, --status, etc.)
+      const schema = await getDbSchema(dbIds);
+      const knownFlags = ['prop', 'from', 'json', 'workspace', 'w', 'filter', 'limit', 'sort', 'output'];
+      const dynamicProps = extractDynamicProps(process.argv, knownFlags, schema);
+      const allProps = [...(opts.prop || []), ...dynamicProps];
+
+      if (allProps.length === 0) {
+        console.error('No properties provided. Use property flags or --prop:');
+        console.error(`  notion add ${db} --name "My Page" --status "Active"`);
+        console.error(`  notion add ${db} --prop "Name=My Page" --prop "Status=Active"`);
+        const propNames = Object.values(schema).map(s => `--${s.name.toLowerCase().replace(/\s+/g, '-')}`);
+        console.error(`\nAvailable: ${propNames.join(', ')}`);
+        process.exit(1);
+      }
+
+      const properties = await buildProperties(dbIds, allProps);
       const res = await notion.pages.create({
         parent: { type: 'data_source_id', data_source_id: dbIds.data_source_id },
         properties,
       });
+
+      // If --from file, parse and append blocks
+      if (opts.from) {
+        const filePath = path.resolve(opts.from);
+        if (!fs.existsSync(filePath)) {
+          console.error(`File not found: ${filePath}`);
+          process.exit(1);
+        }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const ext = path.extname(filePath).toLowerCase();
+
+        let blocks;
+        if (ext === '.md' || ext === '.markdown') {
+          blocks = markdownToBlocks(content);
+        } else {
+          // Treat as plain text
+          blocks = [{ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content } }] } }];
+        }
+
+        // Notion API limits to 100 blocks per append call
+        for (let i = 0; i < blocks.length; i += 100) {
+          await notion.blocks.children.append({
+            block_id: res.id,
+            children: blocks.slice(i, i + 100),
+          });
+        }
+      }
+
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
         return;
       }
       console.log(`✅ Created page: ${res.id}`);
       console.log(`   URL: ${res.url}`);
+      if (opts.from) console.log(`   Content imported from: ${opts.from}`);
     } catch (err) {
       console.error('Add failed:', err.message);
       process.exit(1);
@@ -665,9 +724,11 @@ program
 // ─── update ────────────────────────────────────────────────────────────────────
 program
   .command('update <page-or-alias>')
-  .description('Update a page\'s properties by ID or alias + filter')
-  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .description('Update a page\'s properties by ID or alias + filter (e.g. notion update tasks --filter "Name=Ship it" --status "Done")')
+  .option('--filter <key=value...>', 'Filter to find the page — repeatable for AND (required with alias)', (v, prev) => prev.concat([v]), [])
   .option('--prop <key=value...>', 'Property value — repeatable', (v, prev) => prev.concat([v]), [])
+  .allowUnknownOption()
+  .allowExcessArguments()
   .action(async (target, opts, cmd) => {
     try {
       const notion = getNotion();
@@ -682,7 +743,19 @@ program
         }
         dbIds = { data_source_id: dsId, database_id: page.parent?.database_id || dsId };
       }
-      const properties = await buildProperties(dbIds, opts.prop);
+      // Merge --prop flags with dynamic property flags
+      const schema = await getDbSchema(dbIds);
+      const knownFlags = ['prop', 'filter', 'json', 'workspace', 'w', 'limit', 'sort', 'output'];
+      const dynamicProps = extractDynamicProps(process.argv, knownFlags, schema);
+      const allProps = [...(opts.prop || []), ...dynamicProps];
+
+      if (allProps.length === 0) {
+        console.error('No properties to update. Use property flags or --prop:');
+        console.error(`  notion update ${target} --filter "Name=..." --status "Done"`);
+        process.exit(1);
+      }
+
+      const properties = await buildProperties(dbIds, allProps);
       const res = await notion.pages.update({ page_id: pageId, properties });
       if (getGlobalJson(cmd)) {
         console.log(JSON.stringify(res, null, 2));
@@ -1613,6 +1686,161 @@ program
       }
     } catch (err) {
       console.error('Props failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── import ────────────────────────────────────────────────────────────────────
+program
+  .command('import <file>')
+  .description('Import data from a file (.csv/.json → database pages, .md → page content)')
+  .option('--to <database>', 'Target database alias for CSV/JSON import')
+  .option('--parent <page-id>', 'Parent page for markdown import')
+  .option('--title <text>', 'Page title for markdown import')
+  .action(async (file, opts, cmd) => {
+    try {
+      const filePath = path.resolve(file);
+      if (!fs.existsSync(filePath)) {
+        console.error(`File not found: ${filePath}`);
+        process.exit(1);
+      }
+
+      const ext = path.extname(filePath).toLowerCase();
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      if (ext === '.csv' || ext === '.json') {
+        // Database import: CSV/JSON → pages
+        if (!opts.to) {
+          console.error('--to <database> is required for CSV/JSON import.');
+          console.error('Example: notion import data.csv --to tasks');
+          process.exit(1);
+        }
+
+        const notion = getNotion();
+        const dbIds = resolveDb(opts.to);
+        const schema = await getDbSchema(dbIds);
+
+        let rows;
+        if (ext === '.csv') {
+          rows = parseCsv(content);
+        } else {
+          const parsed = JSON.parse(content);
+          rows = Array.isArray(parsed) ? parsed : [parsed];
+        }
+
+        if (rows.length === 0) {
+          console.error('No data found in file.');
+          process.exit(1);
+        }
+
+        console.log(`Importing ${rows.length} row${rows.length !== 1 ? 's' : ''} to ${opts.to}...`);
+
+        let created = 0;
+        let failed = 0;
+        for (const row of rows) {
+          try {
+            // Map row keys to schema properties
+            const propStrs = [];
+            for (const [key, value] of Object.entries(row)) {
+              if (value === '' || value === null || value === undefined) continue;
+              const schemaEntry = schema[key.toLowerCase()];
+              if (schemaEntry) {
+                propStrs.push(`${schemaEntry.name}=${value}`);
+              }
+            }
+            if (propStrs.length === 0) continue;
+
+            const properties = await buildProperties(dbIds, propStrs);
+            await notion.pages.create({
+              parent: { type: 'data_source_id', data_source_id: dbIds.data_source_id },
+              properties,
+            });
+            created++;
+          } catch (err) {
+            failed++;
+            if (failed <= 3) console.error(`  Row failed: ${err.message}`);
+          }
+        }
+
+        console.log(`✅ Imported ${created} page${created !== 1 ? 's' : ''}${failed > 0 ? ` (${failed} failed)` : ''}`);
+
+      } else if (ext === '.md' || ext === '.markdown') {
+        // Page import: Markdown → page with blocks
+        const notion = getNotion();
+        const title = opts.title || path.basename(filePath, ext);
+
+        let parentId = opts.parent;
+        if (!parentId && opts.to) {
+          // If --to is an alias, create as a database page
+          const dbIds = resolveDb(opts.to);
+          const properties = await buildProperties(dbIds, [`Name=${title}`]);
+          const res = await notion.pages.create({
+            parent: { type: 'data_source_id', data_source_id: dbIds.data_source_id },
+            properties,
+          });
+          parentId = res.id;
+          console.log(`✅ Created page: ${res.id}`);
+        } else if (parentId) {
+          // Create as a child page
+          const res = await notion.pages.create({
+            parent: { type: 'page_id', page_id: parentId },
+            properties: { title: { title: [{ text: { content: title } }] } },
+          });
+          parentId = res.id;
+          console.log(`✅ Created page: ${res.id}`);
+        } else {
+          console.error('Specify --to <database> or --parent <page-id> for markdown import.');
+          process.exit(1);
+        }
+
+        // Parse markdown and append blocks
+        const blocks = markdownToBlocks(content);
+        for (let i = 0; i < blocks.length; i += 100) {
+          await notion.blocks.children.append({
+            block_id: parentId,
+            children: blocks.slice(i, i + 100),
+          });
+        }
+
+        console.log(`   Imported ${blocks.length} block${blocks.length !== 1 ? 's' : ''} from ${path.basename(filePath)}`);
+      } else {
+        console.error(`Unsupported file type: ${ext}`);
+        console.error('Supported: .csv, .json (→ database), .md (→ page)');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('Import failed:', err.message);
+      process.exit(1);
+    }
+  });
+
+// ─── export ────────────────────────────────────────────────────────────────────
+program
+  .command('export <page-or-alias>')
+  .description('Export page content as markdown')
+  .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+  .action(async (target, opts, cmd) => {
+    try {
+      const notion = getNotion();
+      const { pageId } = await resolvePageId(target, opts.filter);
+
+      // Fetch all blocks
+      let blocks = [];
+      let cursor;
+      do {
+        const res = await notion.blocks.children.list({
+          block_id: pageId,
+          start_cursor: cursor,
+          page_size: 100,
+        });
+        blocks = blocks.concat(res.results);
+        cursor = res.has_more ? res.next_cursor : null;
+      } while (cursor);
+
+      const md = blocksToMarkdown(blocks);
+      console.log(md);
+    } catch (err) {
+      console.error('Export failed:', err.message);
       process.exit(1);
     }
   });

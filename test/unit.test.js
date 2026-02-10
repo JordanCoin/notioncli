@@ -10,7 +10,16 @@ const {
   pagesToRows,
   formatCsv,
   formatYaml,
+  parseFilterOperator,
+  resolveRelativeDate,
   buildFilterFromSchema,
+  buildCompoundFilter,
+  markdownToBlocks,
+  parseInlineFormatting,
+  blocksToMarkdown,
+  parseCsv,
+  kebabToProperty,
+  extractDynamicProps,
   UUID_REGEX,
 } = require('../lib/helpers');
 
@@ -698,5 +707,388 @@ describe('buildFilterFromSchema', () => {
       property: 'Name',
       title: { contains: 'a=b=c' },
     });
+  });
+
+  // ─── Rich filter operators ─────────────────────────────────────────────────
+
+  it('builds number greater than filter', () => {
+    const result = buildFilterFromSchema(schema, 'Count>100');
+    assert.deepEqual(result.filter, {
+      property: 'Count',
+      number: { greater_than: 100 },
+    });
+  });
+
+  it('builds number less than filter', () => {
+    const result = buildFilterFromSchema(schema, 'Count<50');
+    assert.deepEqual(result.filter, {
+      property: 'Count',
+      number: { less_than: 50 },
+    });
+  });
+
+  it('builds number greater than or equal filter', () => {
+    const result = buildFilterFromSchema(schema, 'Count>=10');
+    assert.deepEqual(result.filter, {
+      property: 'Count',
+      number: { greater_than_or_equal_to: 10 },
+    });
+  });
+
+  it('builds number less than or equal filter', () => {
+    const result = buildFilterFromSchema(schema, 'Count<=99');
+    assert.deepEqual(result.filter, {
+      property: 'Count',
+      number: { less_than_or_equal_to: 99 },
+    });
+  });
+
+  it('builds not-equal filter for select', () => {
+    const result = buildFilterFromSchema(schema, 'Status!=Draft');
+    assert.deepEqual(result.filter, {
+      property: 'Status',
+      select: { does_not_equal: 'Draft' },
+    });
+  });
+
+  it('builds not-equal filter for title', () => {
+    const result = buildFilterFromSchema(schema, 'Name!=Untitled');
+    assert.deepEqual(result.filter, {
+      property: 'Name',
+      title: { does_not_contain: 'Untitled' },
+    });
+  });
+
+  it('builds date after filter', () => {
+    const result = buildFilterFromSchema(schema, 'Due>2024-01-01');
+    assert.deepEqual(result.filter, {
+      property: 'Due',
+      date: { after: '2024-01-01' },
+    });
+  });
+
+  it('builds date before filter', () => {
+    const result = buildFilterFromSchema(schema, 'Due<2024-12-31');
+    assert.deepEqual(result.filter, {
+      property: 'Due',
+      date: { before: '2024-12-31' },
+    });
+  });
+
+  it('builds date on_or_after filter', () => {
+    const result = buildFilterFromSchema(schema, 'Due>=2024-06-01');
+    assert.deepEqual(result.filter, {
+      property: 'Due',
+      date: { on_or_after: '2024-06-01' },
+    });
+  });
+});
+
+// ─── parseFilterOperator ─────────────────────────────────────────────────────
+
+describe('parseFilterOperator', () => {
+  it('parses = operator', () => {
+    const result = parseFilterOperator('Name=Hello');
+    assert.deepEqual(result, { key: 'Name', operator: '=', value: 'Hello' });
+  });
+
+  it('parses > operator', () => {
+    const result = parseFilterOperator('Amount>100');
+    assert.deepEqual(result, { key: 'Amount', operator: '>', value: '100' });
+  });
+
+  it('parses >= operator', () => {
+    const result = parseFilterOperator('Amount>=50');
+    assert.deepEqual(result, { key: 'Amount', operator: '>=', value: '50' });
+  });
+
+  it('parses != operator', () => {
+    const result = parseFilterOperator('Status!=Done');
+    assert.deepEqual(result, { key: 'Status', operator: '!=', value: 'Done' });
+  });
+
+  it('parses <= operator', () => {
+    const result = parseFilterOperator('Day<=14');
+    assert.deepEqual(result, { key: 'Day', operator: '<=', value: '14' });
+  });
+
+  it('returns error for missing operator', () => {
+    const result = parseFilterOperator('justtext');
+    assert.ok(result.error);
+  });
+});
+
+// ─── resolveRelativeDate ───────────────────────────────────────────────────────
+
+describe('resolveRelativeDate', () => {
+  it('resolves today', () => {
+    const result = resolveRelativeDate('today');
+    // Use local date (same as the function does)
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    assert.equal(result, today.toISOString().split('T')[0]);
+  });
+
+  it('resolves yesterday', () => {
+    const result = resolveRelativeDate('yesterday');
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    today.setDate(today.getDate() - 1);
+    assert.equal(result, today.toISOString().split('T')[0]);
+  });
+
+  it('passes through non-keyword values', () => {
+    assert.equal(resolveRelativeDate('2024-06-15'), '2024-06-15');
+  });
+});
+
+// ─── buildCompoundFilter ───────────────────────────────────────────────────────
+
+describe('buildCompoundFilter', () => {
+  const schema = {
+    name: { type: 'title', name: 'Name' },
+    status: { type: 'select', name: 'Status' },
+    amount: { type: 'number', name: 'Amount' },
+  };
+
+  it('returns single filter for one entry', () => {
+    const result = buildCompoundFilter(schema, ['Status=Active']);
+    assert.ok(!result.error);
+    assert.deepEqual(result.filter, { property: 'Status', select: { equals: 'Active' } });
+  });
+
+  it('returns AND compound for multiple filters', () => {
+    const result = buildCompoundFilter(schema, ['Status=Active', 'Amount>10']);
+    assert.ok(!result.error);
+    assert.ok(result.filter.and);
+    assert.equal(result.filter.and.length, 2);
+    assert.deepEqual(result.filter.and[0], { property: 'Status', select: { equals: 'Active' } });
+    assert.deepEqual(result.filter.and[1], { property: 'Amount', number: { greater_than: 10 } });
+  });
+
+  it('returns error if any filter is invalid', () => {
+    const result = buildCompoundFilter(schema, ['Status=Active', 'bogus']);
+    assert.ok(result.error);
+  });
+});
+
+// ─── markdownToBlocks ──────────────────────────────────────────────────────────
+
+describe('markdownToBlocks', () => {
+  it('parses headings', () => {
+    const blocks = markdownToBlocks('# Title\n## Subtitle\n### Section');
+    assert.equal(blocks.length, 3);
+    assert.equal(blocks[0].type, 'heading_1');
+    assert.equal(blocks[1].type, 'heading_2');
+    assert.equal(blocks[2].type, 'heading_3');
+  });
+
+  it('parses paragraphs', () => {
+    const blocks = markdownToBlocks('Hello world');
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].type, 'paragraph');
+    assert.equal(blocks[0].paragraph.rich_text[0].text.content, 'Hello world');
+  });
+
+  it('parses bullet lists', () => {
+    const blocks = markdownToBlocks('- Item 1\n- Item 2\n* Item 3');
+    assert.equal(blocks.length, 3);
+    blocks.forEach(b => assert.equal(b.type, 'bulleted_list_item'));
+  });
+
+  it('parses numbered lists', () => {
+    const blocks = markdownToBlocks('1. First\n2. Second');
+    assert.equal(blocks.length, 2);
+    blocks.forEach(b => assert.equal(b.type, 'numbered_list_item'));
+  });
+
+  it('parses code blocks', () => {
+    const blocks = markdownToBlocks('```javascript\nconst x = 1;\n```');
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].type, 'code');
+    assert.equal(blocks[0].code.language, 'javascript');
+    assert.equal(blocks[0].code.rich_text[0].text.content, 'const x = 1;');
+  });
+
+  it('parses quotes', () => {
+    const blocks = markdownToBlocks('> This is a quote');
+    assert.equal(blocks[0].type, 'quote');
+  });
+
+  it('parses dividers', () => {
+    const blocks = markdownToBlocks('---');
+    assert.equal(blocks[0].type, 'divider');
+  });
+
+  it('parses todo items', () => {
+    const blocks = markdownToBlocks('- [ ] Not done\n- [x] Done');
+    assert.equal(blocks[0].type, 'to_do');
+    assert.equal(blocks[0].to_do.checked, false);
+    assert.equal(blocks[1].to_do.checked, true);
+  });
+
+  it('skips empty lines', () => {
+    const blocks = markdownToBlocks('Line 1\n\nLine 2');
+    assert.equal(blocks.length, 2);
+  });
+});
+
+// ─── parseInlineFormatting ─────────────────────────────────────────────────────
+
+describe('parseInlineFormatting', () => {
+  it('parses bold text', () => {
+    const result = parseInlineFormatting('Hello **bold** world');
+    assert.equal(result.length, 3);
+    assert.equal(result[1].annotations.bold, true);
+    assert.equal(result[1].text.content, 'bold');
+  });
+
+  it('parses italic text', () => {
+    const result = parseInlineFormatting('Hello *italic* world');
+    assert.equal(result.length, 3);
+    assert.equal(result[1].annotations.italic, true);
+  });
+
+  it('parses inline code', () => {
+    const result = parseInlineFormatting('Use `notion query` here');
+    assert.equal(result.length, 3);
+    assert.equal(result[1].annotations.code, true);
+    assert.equal(result[1].text.content, 'notion query');
+  });
+
+  it('parses links', () => {
+    const result = parseInlineFormatting('Visit [GitHub](https://github.com) now');
+    assert.equal(result.length, 3);
+    assert.equal(result[1].text.content, 'GitHub');
+    assert.equal(result[1].text.link.url, 'https://github.com');
+  });
+
+  it('returns plain text when no formatting', () => {
+    const result = parseInlineFormatting('Just plain text');
+    assert.equal(result.length, 1);
+    assert.equal(result[0].text.content, 'Just plain text');
+  });
+});
+
+// ─── blocksToMarkdown ──────────────────────────────────────────────────────────
+
+describe('blocksToMarkdown', () => {
+  it('converts heading blocks', () => {
+    const blocks = [
+      { type: 'heading_1', heading_1: { rich_text: [{ plain_text: 'Title' }] } },
+      { type: 'heading_2', heading_2: { rich_text: [{ plain_text: 'Sub' }] } },
+    ];
+    const md = blocksToMarkdown(blocks);
+    assert.ok(md.includes('# Title'));
+    assert.ok(md.includes('## Sub'));
+  });
+
+  it('converts paragraph blocks', () => {
+    const blocks = [
+      { type: 'paragraph', paragraph: { rich_text: [{ plain_text: 'Hello' }] } },
+    ];
+    assert.equal(blocksToMarkdown(blocks), 'Hello');
+  });
+
+  it('converts code blocks', () => {
+    const blocks = [
+      { type: 'code', code: { rich_text: [{ plain_text: 'const x = 1;' }], language: 'js' } },
+    ];
+    const md = blocksToMarkdown(blocks);
+    assert.ok(md.includes('```js'));
+    assert.ok(md.includes('const x = 1;'));
+  });
+});
+
+// ─── parseCsv ──────────────────────────────────────────────────────────────────
+
+describe('parseCsv', () => {
+  it('parses simple CSV', () => {
+    const rows = parseCsv('Name,Status\nTask 1,Done\nTask 2,Todo');
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].Name, 'Task 1');
+    assert.equal(rows[0].Status, 'Done');
+    assert.equal(rows[1].Name, 'Task 2');
+  });
+
+  it('handles quoted fields with commas', () => {
+    const rows = parseCsv('Name,Notes\n"Task, Important","Note, here"');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].Name, 'Task, Important');
+    assert.equal(rows[0].Notes, 'Note, here');
+  });
+
+  it('handles escaped quotes', () => {
+    const rows = parseCsv('Name\n"He said ""hello"""');
+    assert.equal(rows[0].Name, 'He said "hello"');
+  });
+
+  it('returns empty for single line', () => {
+    const rows = parseCsv('Name,Status');
+    assert.equal(rows.length, 0);
+  });
+});
+
+// ─── kebabToProperty ───────────────────────────────────────────────────────────
+
+describe('kebabToProperty', () => {
+  const schema = {
+    name: { type: 'title', name: 'Name' },
+    status: { type: 'select', name: 'Status' },
+    'due date': { type: 'date', name: 'Due Date' },
+  };
+
+  it('matches exact lowercase', () => {
+    const result = kebabToProperty('name', schema);
+    assert.equal(result.name, 'Name');
+  });
+
+  it('matches kebab to space', () => {
+    const result = kebabToProperty('due-date', schema);
+    assert.equal(result.name, 'Due Date');
+  });
+
+  it('returns null for no match', () => {
+    const result = kebabToProperty('nonexistent', schema);
+    assert.equal(result, null);
+  });
+
+  it('strips leading dashes', () => {
+    const result = kebabToProperty('--status', schema);
+    assert.equal(result.name, 'Status');
+  });
+});
+
+// ─── extractDynamicProps ───────────────────────────────────────────────────────
+
+describe('extractDynamicProps', () => {
+  const schema = {
+    name: { type: 'title', name: 'Name' },
+    status: { type: 'select', name: 'Status' },
+    'due date': { type: 'date', name: 'Due Date' },
+  };
+
+  it('extracts dynamic property flags', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--name', 'Ship it', '--status', 'Done'];
+    const result = extractDynamicProps(argv, ['prop', 'from'], schema);
+    assert.deepEqual(result, ['Name=Ship it', 'Status=Done']);
+  });
+
+  it('skips known flags', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--prop', 'Name=Hello', '--name', 'World'];
+    const result = extractDynamicProps(argv, ['prop', 'from'], schema);
+    assert.deepEqual(result, ['Name=World']);
+  });
+
+  it('handles kebab-case properties', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--due-date', '2024-06-15'];
+    const result = extractDynamicProps(argv, ['prop'], schema);
+    assert.deepEqual(result, ['Due Date=2024-06-15']);
+  });
+
+  it('ignores flags not in schema', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--bogus', 'value'];
+    const result = extractDynamicProps(argv, ['prop'], schema);
+    assert.deepEqual(result, []);
   });
 });

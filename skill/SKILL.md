@@ -61,6 +61,9 @@ notion alias list                  # Show configured aliases with IDs
 ```bash
 notion query tasks                                     # Query all rows
 notion query tasks --filter Status=Active              # Filter by property
+notion query tasks --filter "Count>10"                 # Greater than
+notion query tasks --filter "Count>=5" --filter "Status!=Draft"  # AND filters
+notion query tasks --filter "Due>=today"               # Relative dates
 notion query tasks --sort Date:desc                    # Sort results
 notion query tasks --filter Status=Active --limit 10   # Combine options
 notion query tasks --output csv                        # CSV output
@@ -68,6 +71,10 @@ notion query tasks --output yaml                       # YAML output
 notion query tasks --output json                       # JSON output
 notion --json query tasks                              # JSON (shorthand)
 ```
+
+**Filter operators:** `=` (equals/contains), `!=` (not equal), `>`, `<`, `>=`, `<=`
+**Relative dates:** `today`, `yesterday`, `tomorrow`, `last_week`, `next_week`
+**Multiple filters** combine as AND.
 
 **Output formats:**
 - `table` — formatted ASCII table (default)
@@ -78,24 +85,29 @@ notion --json query tasks                              # JSON (shorthand)
 ### Creating Pages
 
 ```bash
+# Use property names as flags (recommended — reads like English)
+notion add tasks --name "Buy groceries" --status "Todo"
+notion add projects --name "New Feature" --priority "High" --due "2026-03-01"
+
+# Or use --prop for programmatic use
 notion add tasks --prop "Name=Buy groceries" --prop "Status=Todo"
-notion add projects --prop "Name=New Feature" --prop "Priority=High" --prop "Due=2026-03-01"
+
+# Create with markdown body
+notion add tasks --name "Sprint Notes" --from notes.md
 ```
 
-Multiple `--prop` flags for multiple properties. Property names are case-insensitive and matched against the database schema.
+Property names from your database schema become CLI flags automatically. Multi-word properties use kebab-case: `--due-date` → "Due Date".
 
 ### Updating Pages
 
-By page ID:
 ```bash
-notion update <page-id> --prop "Status=Done"
-notion update <page-id> --prop "Priority=Low" --prop "Notes=Updated by CLI"
-```
+# Dynamic flags (recommended)
+notion update tasks --filter "Name=Ship feature" --status "Done"
+notion update workouts --filter "Name=LEGS #5" --notes "Great session"
 
-By alias + filter (zero UUIDs):
-```bash
-notion update tasks --filter "Name=Ship feature" --prop "Status=Done"
-notion update workouts --filter "Name=LEGS #5" --prop "Notes=Great session"
+# Or --prop syntax
+notion update <page-id> --prop "Status=Done"
+notion update tasks --filter "Name=Ship feature" --prop "Status=Done" --prop "Notes=Updated"
 ```
 
 ### Reading Pages & Content
@@ -203,6 +215,28 @@ Supports images, PDFs, text files, documents. MIME types auto-detected from exte
 
 ```bash
 notion search "quarterly report"   # Search across all pages and databases
+```
+
+### Import
+
+```bash
+# CSV → database pages (headers become property names)
+notion import data.csv --to tasks
+
+# JSON → database pages (array of objects)
+notion import data.json --to tasks
+
+# Markdown → page with blocks
+notion import notes.md --to tasks --title "Sprint Notes"
+notion import doc.md --parent <page-id> --title "My Document"
+```
+
+### Export
+
+```bash
+# Export page content as markdown
+notion export tasks --filter "Name=Sprint Notes"
+notion export <page-id>
 ```
 
 ### JSON Output

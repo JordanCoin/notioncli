@@ -6,9 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
 
-A powerful CLI for the Notion API — aliases, zero UUIDs, relations & rollups, and full block-level CRUD. Built for humans and AI agents.
+A powerful CLI for the Notion API — aliases, zero UUIDs, natural property flags, and full CRUD. Built for humans and AI agents.
 
-**No more copy-pasting UUIDs.** Set up aliases once, then just type `notion query tasks` or `notion add projects --prop "Name=Ship it"`.
+**No more copy-pasting UUIDs. No more `--prop`.** Set up aliases once, then just use property names as flags:
 
 ```bash
 npm install -g @jordancoin/notioncli
@@ -25,16 +25,28 @@ notion init --key ntn_your_api_key_here
 #   ✅ reading-list → Reading List
 #   ✅ meetings     → Meeting Notes
 
-# 2. Start using them immediately
-notion query projects
-notion add projects --prop "Name=Ship it" --prop "Status=Todo"
+# 2. Use property names as flags — reads like English
+notion add projects --name "Ship it" --status "Todo" --priority "High"
+notion query projects --filter Status=Active --filter Priority=High
+notion update projects --filter "Name=Ship it" --status "Done"
 ```
 
-Zero UUIDs. One command. You're ready to go.
+Zero UUIDs. Natural flags. You're ready to go.
 
 ---
 
 ## What's New
+
+### v1.3 — Dynamic Property Flags, Rich Filters & File Import/Export
+
+- 🎯 **Dynamic property flags** — `--name "Ship it" --status "Done"` instead of `--prop "Name=Ship it"`. Properties from your database schema become CLI flags automatically.
+- 🔎 **Rich filter operators** — `>`, `<`, `>=`, `<=`, `!=` (e.g. `--filter "Count>10" --filter "Status!=Draft"`)
+- 🔗 **Multiple filters (AND)** — `--filter Status=Active --filter Priority=High` combines as AND
+- 📅 **Relative dates** — `--filter "Due=today"`, `yesterday`, `tomorrow`, `last_week`, `next_week`
+- 📥 **`import`** — Import `.csv`/`.json` as database pages, `.md` as page content with full block parsing
+- 📤 **`export`** — Export page content as markdown
+- 📝 **`--from`** — Create pages with markdown body: `notion add tasks --name "Notes" --from notes.md`
+- 🧱 **Markdown parser** — Headings, lists, code blocks, quotes, todos, dividers, bold/italic/code/links
 
 ### v1.2 — Multi-Workspace, Database Management & File Uploads
 
@@ -508,7 +520,7 @@ You don't need to think about this. It just works.
 
 ### Reliability
 
-- 140 unit tests
+- 190 unit tests
 - Tested against live Notion workspaces
 - Designed to fail loudly and safely when filters match zero or multiple pages
 

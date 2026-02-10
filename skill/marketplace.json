@@ -9,7 +9,7 @@
   "author": "JordanCoin",
   "authorUrl": "https://github.com/JordanCoin",
   "repository": "https://github.com/JordanCoin/notioncli",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "tags": ["notion", "cli", "api", "database", "productivity", "workspace", "automation", "ai-agent"],
   "requirements": ["Node.js >= 18", "Notion API key (free)"],
   "optional": []
