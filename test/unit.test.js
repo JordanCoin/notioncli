@@ -711,6 +711,28 @@ describe('buildFilterFromSchema', () => {
     });
   });
 
+  it('handles values containing other operators', () => {
+    const result = buildFilterFromSchema(schema, 'Description=x>=y');
+    assert.deepEqual(result.filter, {
+      property: 'Description',
+      rich_text: { contains: 'x>=y' },
+    });
+  });
+
+  it('handles quoted values containing operators', () => {
+    const result = buildFilterFromSchema(schema, 'Description="x>=y"');
+    assert.deepEqual(result.filter, {
+      property: 'Description',
+      rich_text: { contains: 'x>=y' },
+    });
+  });
+
+  it('returns error for NaN number values', () => {
+    const result = buildFilterFromSchema(schema, 'Count=abc');
+    assert.ok(result.error);
+    assert.ok(result.error.includes('Invalid number value'));
+  });
+
   // ─── Rich filter operators ─────────────────────────────────────────────────
 
   it('builds number greater than filter', () => {
@@ -812,6 +834,16 @@ describe('parseFilterOperator', () => {
   it('parses <= operator', () => {
     const result = parseFilterOperator('Day<=14');
     assert.deepEqual(result, { key: 'Day', operator: '<=', value: '14' });
+  });
+
+  it('parses values containing other operators', () => {
+    const result = parseFilterOperator('Description=x>=y');
+    assert.deepEqual(result, { key: 'Description', operator: '=', value: 'x>=y' });
+  });
+
+  it('parses quoted values containing operators', () => {
+    const result = parseFilterOperator('Description="x>=y"');
+    assert.deepEqual(result, { key: 'Description', operator: '=', value: 'x>=y' });
   });
 
   it('returns error for missing operator', () => {
