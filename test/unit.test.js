@@ -960,6 +960,19 @@ describe('markdownToBlocks', () => {
     blocks.forEach(b => assert.equal(b.type, 'bulleted_list_item'));
   });
 
+  it('parses nested bullet lists', () => {
+    const blocks = markdownToBlocks('- Item 1\n  - Sub 1\n    - Sub 2\n- Item 2');
+    assert.equal(blocks.length, 2);
+    assert.equal(blocks[0].type, 'bulleted_list_item');
+    assert.equal(blocks[0].bulleted_list_item.children.length, 1);
+    assert.equal(blocks[0].bulleted_list_item.children[0].type, 'bulleted_list_item');
+    assert.equal(
+      blocks[0].bulleted_list_item.children[0].bulleted_list_item.children.length,
+      1,
+    );
+    assert.equal(blocks[1].type, 'bulleted_list_item');
+  });
+
   it('parses numbered lists', () => {
     const blocks = markdownToBlocks('1. First\n2. Second');
     assert.equal(blocks.length, 2);
@@ -1062,6 +1075,31 @@ describe('blocksToMarkdown', () => {
     assert.ok(md.includes('```js'));
     assert.ok(md.includes('const x = 1;'));
   });
+
+  it('preserves annotations and links', () => {
+    const blocks = [
+      {
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            { type: 'text', text: { content: 'Bold' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' ' } },
+            { type: 'text', text: { content: 'Italic' }, annotations: { italic: true } },
+            { type: 'text', text: { content: ' ' } },
+            { type: 'text', text: { content: 'Code' }, annotations: { code: true } },
+            { type: 'text', text: { content: ' ' } },
+            { type: 'text', text: { content: 'Link', link: { url: 'https://example.com' } } },
+            { type: 'text', text: { content: ' ' } },
+            { type: 'text', text: { content: 'Strike' }, annotations: { strikethrough: true } },
+          ],
+        },
+      },
+    ];
+    assert.equal(
+      blocksToMarkdown(blocks),
+      '**Bold** *Italic* `Code` [Link](https://example.com) ~~Strike~~',
+    );
+  });
 });
 
 // ─── parseCsv ──────────────────────────────────────────────────────────────────
@@ -1085,6 +1123,13 @@ describe('parseCsv', () => {
   it('handles escaped quotes', () => {
     const rows = parseCsv('Name\n"He said ""hello"""');
     assert.equal(rows[0].Name, 'He said "hello"');
+  });
+
+  it('handles multiline quoted fields', () => {
+    const rows = parseCsv('Name,Notes\n"Task 1","Line 1\nLine 2"\n"Task 2","Single"');
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].Notes, 'Line 1\nLine 2');
+    assert.equal(rows[1].Notes, 'Single');
   });
 
   it('returns empty for single line', () => {
