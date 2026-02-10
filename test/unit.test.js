@@ -1100,6 +1100,7 @@ describe('extractDynamicProps', () => {
     name: { type: 'title', name: 'Name' },
     status: { type: 'select', name: 'Status' },
     'due date': { type: 'date', name: 'Due Date' },
+    archived: { type: 'checkbox', name: 'Archived' },
   };
 
   it('extracts dynamic property flags', () => {
@@ -1118,6 +1119,30 @@ describe('extractDynamicProps', () => {
     const argv = ['node', 'notion', 'add', 'tasks', '--due-date', '2024-06-15'];
     const result = extractDynamicProps(argv, ['prop'], schema);
     assert.deepEqual(result, ['Due Date=2024-06-15']);
+  });
+
+  it('supports equals syntax with flag-like values', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--name=--help', '--status=Done'];
+    const result = extractDynamicProps(argv, ['prop'], schema);
+    assert.deepEqual(result, ['Name=--help', 'Status=Done']);
+  });
+
+  it('consumes flag-like values at end of args', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--name', '--help'];
+    const result = extractDynamicProps(argv, ['prop'], schema);
+    assert.deepEqual(result, ['Name=--help']);
+  });
+
+  it('consumes flag-like values that are unknown flags', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--name', '--bogus', '--status', 'Done'];
+    const result = extractDynamicProps(argv, ['prop'], schema);
+    assert.deepEqual(result, ['Name=--bogus', 'Status=Done']);
+  });
+
+  it('treats checkbox properties as boolean toggles', () => {
+    const argv = ['node', 'notion', 'add', 'tasks', '--archived', '--name', 'Ship it'];
+    const result = extractDynamicProps(argv, ['prop'], schema);
+    assert.deepEqual(result, ['Archived=true', 'Name=Ship it']);
   });
 
   it('ignores flags not in schema', () => {
