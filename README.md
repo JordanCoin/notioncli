@@ -502,11 +502,13 @@ Config is stored at `~/.config/notioncli/config.json`:
 
 The latest Notion API introduced a dual-ID system for databases. Each database now has both a `database_id` and a `data_source_id`. **notioncli handles this automatically** — when you add an alias, both IDs are discovered and stored. When you pass a raw UUID, it resolves correctly.
 
+Additionally, the 2025 API moved property management from `databases` to `dataSources`. notioncli routes `db-create` and `db-update` property changes through `dataSources.update()` automatically — the old `databases.update()` endpoint silently ignores property modifications.
+
 You don't need to think about this. It just works.
 
 ### Reliability
 
-- 139 unit tests
+- 140 unit tests
 - Tested against live Notion workspaces
 - Designed to fail loudly and safely when filters match zero or multiple pages
 
