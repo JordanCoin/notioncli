@@ -277,7 +277,12 @@ async function buildProperties(dbIds, props) {
       process.exit(1);
     }
 
-    properties[schemaEntry.name] = buildPropValue(schemaEntry.type, value);
+    const built = buildPropValue(schemaEntry.type, value);
+    if (built && built.error) {
+      console.error(`Invalid value for "${schemaEntry.name}" (${schemaEntry.type}): ${built.error}`);
+      process.exit(1);
+    }
+    properties[schemaEntry.name] = built;
   }
 
   return properties;

@@ -284,6 +284,12 @@ describe('buildPropValue', () => {
     assert.deepEqual(buildPropValue('number', '3.14'), { number: 3.14 });
   });
 
+  it('rejects invalid number property', () => {
+    assert.deepEqual(buildPropValue('number', 'abc'), {
+      error: 'Invalid number value: "abc"',
+    });
+  });
+
   it('builds select property', () => {
     assert.deepEqual(buildPropValue('select', 'Option A'), {
       select: { name: 'Option A' },
@@ -308,6 +314,18 @@ describe('buildPropValue', () => {
     });
   });
 
+  it('builds date property with full ISO date-time', () => {
+    assert.deepEqual(buildPropValue('date', '2024-01-15T10:30:00Z'), {
+      date: { start: '2024-01-15T10:30:00Z' },
+    });
+  });
+
+  it('rejects invalid date property', () => {
+    assert.deepEqual(buildPropValue('date', '2024-13-01'), {
+      error: 'Invalid date value: "2024-13-01" (expected YYYY-MM-DD or full ISO 8601)',
+    });
+  });
+
   it('builds checkbox property — true values', () => {
     assert.deepEqual(buildPropValue('checkbox', 'true'), { checkbox: true });
     assert.deepEqual(buildPropValue('checkbox', '1'), { checkbox: true });
@@ -327,9 +345,21 @@ describe('buildPropValue', () => {
     });
   });
 
+  it('rejects invalid url property', () => {
+    assert.deepEqual(buildPropValue('url', 'example.com'), {
+      error: 'Invalid URL value: "example.com" (expected http:// or https://)',
+    });
+  });
+
   it('builds email property', () => {
     assert.deepEqual(buildPropValue('email', 'user@test.com'), {
       email: 'user@test.com',
+    });
+  });
+
+  it('rejects invalid email property', () => {
+    assert.deepEqual(buildPropValue('email', 'user.test.com'), {
+      error: 'Invalid email value: "user.test.com" (expected "@" in address)',
     });
   });
 
