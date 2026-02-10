@@ -6,7 +6,7 @@ const { createContext } = require('../lib/context');
 program
   .name('notion')
   .description('A powerful CLI for the Notion API — query databases, manage pages, and automate your workspace from the terminal.')
-  .version('1.3.0')
+  .version('1.3.1')
   .option('--json', 'Output raw JSON instead of formatted tables')
   .option('-w, --workspace <name>', 'Use a specific workspace profile');
 
