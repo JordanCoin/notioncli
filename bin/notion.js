@@ -163,6 +163,7 @@ const {
   kebabToProperty,
   extractDynamicProps,
   UUID_REGEX,
+  paginate,
 } = helpers;
 
 /** Check if --json flag is set anywhere in the command chain */
@@ -584,9 +585,12 @@ program
   .description('Search across all pages and databases shared with your integration')
   .action(async (query, opts, cmd) => runCommand('Search', async () => {
     const notion = getNotion();
-    const res = await notion.search({ query, page_size: 20 });
-    if (jsonOutput(cmd, res)) return;
-    const rows = res.results.map(r => {
+    const { results, response } = await paginate(
+      ({ start_cursor, page_size }) => notion.search({ query, start_cursor, page_size }),
+      { pageSizeLimit: 100 },
+    );
+    if (jsonOutput(cmd, response)) return;
+    const rows = results.map(r => {
       let title = '';
       if (r.object === 'data_source' || r.object === 'database') {
         title = richTextToPlain(r.title);
@@ -614,15 +618,17 @@ program
   .description('Query a database by alias or ID (e.g. notion query projects --filter Status=Active)')
   .option('--filter <key=value...>', 'Filter by property — repeatable, supports operators: =, !=, >, <, >=, <= (e.g. --filter Status=Active --filter Day>5)', (v, prev) => prev.concat([v]), [])
   .option('--sort <key:direction>', 'Sort by property (e.g. Date:desc)')
-  .option('--limit <n>', 'Max results (default: 100, max: 100)', '100')
+  .option('--limit <n>', 'Max results (default: all)')
   .option('--output <format>', 'Output format: table, csv, json, yaml (default: table)')
   .action(async (db, opts, cmd) => runCommand('Query', async () => {
     const notion = getNotion();
     const dbIds = resolveDb(db);
-    const params = {
-      data_source_id: dbIds.data_source_id,
-      page_size: Math.min(parseInt(opts.limit), 100),
-    };
+    const limit = opts.limit == null ? null : parseInt(opts.limit, 10);
+    if (opts.limit != null && (!Number.isFinite(limit) || limit < 0)) {
+      console.error(`Invalid --limit value: ${opts.limit}`);
+      process.exit(1);
+    }
+    const params = { data_source_id: dbIds.data_source_id };
 
     if (opts.filter && opts.filter.length > 0) {
       params.filter = await buildFilter(dbIds, opts.filter);
@@ -640,17 +646,23 @@ program
       params.sorts = [{ property: entry.name, direction: dir === 'desc' ? 'descending' : 'ascending' }];
     }
 
-    const res = await notion.dataSources.query(params);
+    const { results, response, truncated } = await paginate(
+      ({ start_cursor, page_size }) => notion.dataSources.query({ ...params, start_cursor, page_size }),
+      { limit, pageSizeLimit: 100 },
+    );
+    if (truncated) {
+      console.error(`Warning: results truncated to ${limit}. Use --limit to increase or omit to fetch all results.`);
+    }
 
     // Determine output format: --output takes precedence, --json is shorthand
     const format = opts.output || (getGlobalJson(cmd) ? 'json' : 'table');
 
     if (format === 'json') {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(JSON.stringify(response, null, 2));
       return;
     }
 
-    const rows = pagesToRows(res.results);
+    const rows = pagesToRows(results);
     if (rows.length === 0) {
       console.log('(no results)');
       return;
@@ -844,13 +856,20 @@ program
   .action(async (target, opts, cmd) => runCommand('Blocks', async () => {
     const notion = getNotion();
     const { pageId } = await resolvePageId(target, opts.filter);
-    const res = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
-    if (jsonOutput(cmd, res)) return;
-    if (res.results.length === 0) {
+    const { results, response } = await paginate(
+      ({ start_cursor, page_size }) => notion.blocks.children.list({
+        block_id: pageId,
+        start_cursor,
+        page_size,
+      }),
+      { pageSizeLimit: 100 },
+    );
+    if (jsonOutput(cmd, response)) return;
+    if (results.length === 0) {
       console.log('(no blocks)');
       return;
     }
-    for (const block of res.results) {
+    for (const block of results) {
       const type = block.type;
       const content = block[type];
       let text = '';
@@ -1017,12 +1036,16 @@ program
   .description('List all databases shared with your integration')
   .action(async (opts, cmd) => runCommand('List databases', async () => {
     const notion = getNotion();
-    const res = await notion.search({
-      filter: { value: 'data_source', property: 'object' },
-      page_size: 100,
-    });
-    if (jsonOutput(cmd, res)) return;
-    const rows = res.results.map(db => ({
+    const { results, response } = await paginate(
+      ({ start_cursor, page_size }) => notion.search({
+        filter: { value: 'data_source', property: 'object' },
+        start_cursor,
+        page_size,
+      }),
+      { pageSizeLimit: 100 },
+    );
+    if (jsonOutput(cmd, response)) return;
+    const rows = results.map(db => ({
       id: db.id,
       title: richTextToPlain(db.title),
       url: db.url || '',
@@ -1041,9 +1064,12 @@ program
   .description('List all users in the workspace')
   .action(async (opts, cmd) => runCommand('Users', async () => {
     const notion = getNotion();
-    const res = await notion.users.list({});
-    if (jsonOutput(cmd, res)) return;
-    const rows = res.results.map(u => ({
+    const { results, response } = await paginate(
+      ({ start_cursor, page_size }) => notion.users.list({ start_cursor, page_size }),
+      { pageSizeLimit: 100 },
+    );
+    if (jsonOutput(cmd, response)) return;
+    const rows = results.map(u => ({
       id: u.id,
       name: u.name || '',
       type: u.type || '',
@@ -1082,13 +1108,20 @@ program
   .action(async (target, opts, cmd) => runCommand('Comments', async () => {
     const notion = getNotion();
     const { pageId } = await resolvePageId(target, opts.filter);
-    const res = await notion.comments.list({ block_id: pageId });
-    if (jsonOutput(cmd, res)) return;
-    if (res.results.length === 0) {
+    const { results, response } = await paginate(
+      ({ start_cursor, page_size }) => notion.comments.list({
+        block_id: pageId,
+        start_cursor,
+        page_size,
+      }),
+      { pageSizeLimit: 100 },
+    );
+    if (jsonOutput(cmd, response)) return;
+    if (results.length === 0) {
       console.log('(no comments)');
       return;
     }
-    const rows = res.results.map(c => ({
+    const rows = results.map(c => ({
       id: c.id,
       text: richTextToPlain(c.rich_text),
       created: c.created_time || '',
