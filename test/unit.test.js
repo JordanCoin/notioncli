@@ -21,6 +21,7 @@ const {
   kebabToProperty,
   extractDynamicProps,
   UUID_REGEX,
+  paginate,
 } = require('../lib/helpers');
 
 // ─── richTextToPlain ───────────────────────────────────────────────────────────
@@ -1090,5 +1091,58 @@ describe('extractDynamicProps', () => {
     const argv = ['node', 'notion', 'add', 'tasks', '--bogus', 'value'];
     const result = extractDynamicProps(argv, ['prop'], schema);
     assert.deepEqual(result, []);
+  });
+});
+
+// ─── paginate ──────────────────────────────────────────────────────────────────
+
+describe('paginate', () => {
+  it('fetches all pages until has_more is false', async () => {
+    const pages = [
+      { results: [1, 2], has_more: true, next_cursor: 'a', object: 'list' },
+      { results: [3], has_more: false, next_cursor: null, object: 'list' },
+    ];
+    let call = 0;
+    const fetchPage = async () => pages[call++];
+
+    const { results, truncated, has_more, next_cursor, response } = await paginate(fetchPage);
+
+    assert.deepEqual(results, [1, 2, 3]);
+    assert.equal(truncated, false);
+    assert.equal(has_more, false);
+    assert.equal(next_cursor, null);
+    assert.equal(response.object, 'list');
+    assert.deepEqual(response.results, [1, 2, 3]);
+  });
+
+  it('respects limit and flags truncation when more results exist', async () => {
+    const pages = [
+      { results: [1, 2], has_more: true, next_cursor: 'a', object: 'list' },
+      { results: [3, 4], has_more: true, next_cursor: 'b', object: 'list' },
+    ];
+    let call = 0;
+    const fetchPage = async () => pages[call++];
+
+    const { results, truncated, has_more, next_cursor } = await paginate(fetchPage, { limit: 3, pageSizeLimit: 2 });
+
+    assert.deepEqual(results, [1, 2, 3]);
+    assert.equal(truncated, true);
+    assert.equal(has_more, true);
+    assert.equal(next_cursor, 'b');
+  });
+
+  it('does not truncate when limit equals total results', async () => {
+    const pages = [
+      { results: [1, 2], has_more: true, next_cursor: 'a', object: 'list' },
+      { results: [3], has_more: false, next_cursor: null, object: 'list' },
+    ];
+    let call = 0;
+    const fetchPage = async () => pages[call++];
+
+    const { results, truncated, has_more } = await paginate(fetchPage, { limit: 3, pageSizeLimit: 2 });
+
+    assert.deepEqual(results, [1, 2, 3]);
+    assert.equal(truncated, false);
+    assert.equal(has_more, false);
   });
 });
