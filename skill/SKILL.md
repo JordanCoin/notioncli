@@ -153,6 +153,33 @@ notion block-delete <block-id>                                # Delete a block
 
 Use `--ids` to get block IDs, then target specific blocks with `block-edit` or `block-delete`.
 
+The `blocks` command displays all block types including:
+- 📄 Child pages (subpages nested under the page)
+- 🗄️ Child databases
+- Headings, paragraphs, lists, to-dos, code blocks, dividers, etc.
+
+### Child Pages
+
+List only child pages and databases under a page:
+
+```bash
+notion children <page-id>                                     # List child pages with IDs
+notion children tasks --filter "Name=Ship feature"            # By alias + filter
+```
+
+Output shows each child page with its full ID for easy navigation:
+```
+📄 Chapter 1
+   ID: 6e174679-5233-4419-a178-a0df9043d345
+
+📄 Chapter 2
+   ID: a7aa03c5-9e17-41a6-a907-07ec3ae6b567
+
+2 child item(s)
+```
+
+This is useful for navigating Notion page hierarchies programmatically.
+
 ### Appending Content
 
 ```bash
