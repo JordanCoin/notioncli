@@ -35,6 +35,25 @@ module.exports = {
           const type = block.type;
           const content = block[type];
           let text = '';
+          
+          // Handle child_page and child_database specially
+          if (type === 'child_page') {
+            text = content?.title || '(untitled)';
+            const idTag = opts.ids ? `[${block.id}] ` : '';
+            console.log(`${idTag}📄 ${text}`);
+            continue;
+          }
+          if (type === 'child_database') {
+            text = content?.title || '(untitled database)';
+            const idTag = opts.ids ? `[${block.id}] ` : '';
+            console.log(`${idTag}🗄️  ${text}`);
+            continue;
+          }
+          if (type === 'divider') {
+            console.log('---');
+            continue;
+          }
+          
           if (content?.rich_text) {
             text = richTextToPlain(content.rich_text);
           } else if (content?.text) {
@@ -52,6 +71,43 @@ module.exports = {
           const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
           console.log(`${idTag}${prefix}${text}${suffix}`);
         }
+      }));
+
+    // ─── children ─────────────────────────────────────────────────────────────
+    program
+      .command('children <page-or-alias>')
+      .description('List child pages and databases under a page')
+      .option('--filter <key=value>', 'Filter to find the page (required when using an alias)')
+      .action(async (target, opts, cmd) => runCommand('Children', async () => {
+        const notion = getNotion();
+        const { pageId } = await resolvePageId(target, opts.filter);
+        const { results, response } = await paginate(
+          ({ start_cursor, page_size }) => notion.blocks.children.list({
+            block_id: pageId,
+            start_cursor,
+            page_size,
+          }),
+          { pageSizeLimit: 100 },
+        );
+        if (jsonOutput(cmd, response)) return;
+        
+        const children = results.filter(b => b.type === 'child_page' || b.type === 'child_database');
+        if (children.length === 0) {
+          console.log('(no child pages or databases)');
+          return;
+        }
+        
+        console.log('');
+        for (const block of children) {
+          const type = block.type;
+          const content = block[type];
+          const title = content?.title || '(untitled)';
+          const icon = type === 'child_page' ? '📄' : '🗄️';
+          console.log(`${icon} ${title}`);
+          console.log(`   ID: ${block.id}`);
+          console.log('');
+        }
+        console.log(`${children.length} child item(s)`);
       }));
 
     // ─── block-edit ───────────────────────────────────────────────────────────
