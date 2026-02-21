@@ -8,6 +8,7 @@ module.exports = {
       richTextToPlain,
       runCommand,
       getWorkspaceConfig,
+      parseInlineFormatting,
     } = ctx;
 
     // ─── blocks ───────────────────────────────────────────────────────────────
@@ -188,6 +189,9 @@ module.exports = {
         const blockType = opts.type || 'paragraph';
         let block;
         
+        // Parse markdown inline formatting (**bold**, *italic*, `code`, [links](url))
+        const richText = parseInlineFormatting ? parseInlineFormatting(text) : [{ type: 'text', text: { content: text } }];
+        
         if (blockType === 'divider') {
           block = { object: 'block', type: 'divider', divider: {} };
         } else if (blockType === 'to_do') {
@@ -195,7 +199,7 @@ module.exports = {
             object: 'block',
             type: 'to_do',
             to_do: {
-              rich_text: [{ text: { content: text } }],
+              rich_text: richText,
               checked: opts.checked || false,
             },
           };
@@ -204,7 +208,7 @@ module.exports = {
             object: 'block',
             type: blockType,
             [blockType]: {
-              rich_text: [{ text: { content: text } }],
+              rich_text: richText,
             },
           };
         } else if (['bulleted_list_item', 'numbered_list_item'].includes(blockType)) {
@@ -212,7 +216,7 @@ module.exports = {
             object: 'block',
             type: blockType,
             [blockType]: {
-              rich_text: [{ text: { content: text } }],
+              rich_text: richText,
             },
           };
         } else {
@@ -221,7 +225,7 @@ module.exports = {
             object: 'block',
             type: 'paragraph',
             paragraph: {
-              rich_text: [{ text: { content: text } }],
+              rich_text: richText,
             },
           };
         }
