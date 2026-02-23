@@ -71,6 +71,7 @@ notion alias rename project-tracker projects
 | `me` | Show bot identity | `notion me` |
 | `move` | Move page between DBs | `notion move tasks --filter "Name=Done" --to archive` |
 | `templates` | List DB templates | `notion templates projects` |
+| `page-create` | Create a page | `notion page-create <parent-id> "My Page" --icon 📝` |
 | `db-create` | Create a database | `notion db-create <parent-id> "Tasks" --prop "Name:title"` |
 | `db-update` | Update DB schema | `notion db-update projects --add-prop "Rating:number"` |
 | `upload` | Upload file to page | `notion upload tasks --filter "Name=Ship it" ./file.png` |

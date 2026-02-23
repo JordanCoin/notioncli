@@ -9,7 +9,57 @@ module.exports = {
       propValue,
       printTable,
       runCommand,
+      parseInlineFormatting,
     } = ctx;
+
+    // ─── page-create ─────────────────────────────────────────────────────────
+    program
+      .command('page-create <parent-page-id> <title>')
+      .description('Create a new page under another page (not a database)')
+      .option('--icon <emoji>', 'Page icon emoji')
+      .option('--cover <url>', 'Cover image URL')
+      .action(async (parentId, title, opts, cmd) => runCommand('Page create', async () => {
+        const notion = getNotion();
+        
+        // Resolve parent if it looks like a page reference
+        let resolvedParentId = parentId;
+        if (!UUID_REGEX.test(parentId)) {
+          // Try to resolve as a page via filter
+          try {
+            const { pageId } = await resolvePageId(parentId, opts.filter);
+            resolvedParentId = pageId;
+          } catch {
+            console.error(`Could not resolve parent: "${parentId}"`);
+            console.error('Provide a valid page ID (UUID format).');
+            process.exit(1);
+          }
+        }
+        
+        const pageData = {
+          parent: { page_id: resolvedParentId },
+          properties: {
+            title: [{ text: { content: title } }],
+          },
+        };
+        
+        // Add icon if provided
+        if (opts.icon) {
+          pageData.icon = { type: 'emoji', emoji: opts.icon };
+        }
+        
+        // Add cover if provided
+        if (opts.cover) {
+          pageData.cover = { type: 'external', external: { url: opts.cover } };
+        }
+        
+        const res = await notion.pages.create(pageData);
+        
+        if (jsonOutput(cmd, res)) return;
+        
+        console.log(`✅ Created page: ${res.id}`);
+        console.log(`   Title: ${title}`);
+        console.log(`   URL: ${res.url}`);
+      }));
 
     // ─── relations ───────────────────────────────────────────────────────────
     program
