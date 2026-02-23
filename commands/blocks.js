@@ -100,6 +100,171 @@ module.exports = {
             continue;
           }
           
+          // Handle image blocks
+          if (type === 'image') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.file?.url || content?.external?.url || '';
+            const caption = content?.caption ? richTextToPlain(content.caption) : '';
+            console.log(`${idTag}🖼️  ${caption || '(image)'}`);
+            if (url) console.log(`${idTag}   ${url.slice(0, 80)}${url.length > 80 ? '...' : ''}`);
+            continue;
+          }
+          
+          // Handle video blocks
+          if (type === 'video') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.file?.url || content?.external?.url || '';
+            const caption = content?.caption ? richTextToPlain(content.caption) : '';
+            console.log(`${idTag}🎬 ${caption || '(video)'}`);
+            if (url) console.log(`${idTag}   ${url.slice(0, 80)}${url.length > 80 ? '...' : ''}`);
+            continue;
+          }
+          
+          // Handle audio blocks
+          if (type === 'audio') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.file?.url || content?.external?.url || '';
+            const caption = content?.caption ? richTextToPlain(content.caption) : '';
+            console.log(`${idTag}🔊 ${caption || '(audio)'}`);
+            if (url) console.log(`${idTag}   ${url.slice(0, 80)}${url.length > 80 ? '...' : ''}`);
+            continue;
+          }
+          
+          // Handle file blocks
+          if (type === 'file') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.file?.url || content?.external?.url || '';
+            const name = content?.name || content?.caption?.[0]?.plain_text || '(file)';
+            console.log(`${idTag}📎 ${name}`);
+            if (url) console.log(`${idTag}   ${url.slice(0, 80)}${url.length > 80 ? '...' : ''}`);
+            continue;
+          }
+          
+          // Handle PDF blocks
+          if (type === 'pdf') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.file?.url || content?.external?.url || '';
+            const caption = content?.caption ? richTextToPlain(content.caption) : '';
+            console.log(`${idTag}📑 ${caption || '(PDF)'}`);
+            if (url) console.log(`${idTag}   ${url.slice(0, 80)}${url.length > 80 ? '...' : ''}`);
+            continue;
+          }
+          
+          // Handle bookmark blocks
+          if (type === 'bookmark') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.url || '';
+            const caption = content?.caption ? richTextToPlain(content.caption) : '';
+            console.log(`${idTag}🔖 ${caption || url || '(bookmark)'}`);
+            if (caption && url) console.log(`${idTag}   ${url}`);
+            continue;
+          }
+          
+          // Handle embed blocks
+          if (type === 'embed') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.url || '';
+            const caption = content?.caption ? richTextToPlain(content.caption) : '';
+            console.log(`${idTag}🔗 ${caption || '(embed)'}`);
+            if (url) console.log(`${idTag}   ${url}`);
+            continue;
+          }
+          
+          // Handle link_preview blocks
+          if (type === 'link_preview') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const url = content?.url || '';
+            console.log(`${idTag}🔗 ${url}`);
+            continue;
+          }
+          
+          // Handle callout blocks
+          if (type === 'callout') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const icon = content?.icon?.emoji || content?.icon?.external?.url ? '📌' : '💡';
+            const text = content?.rich_text ? richTextToPlain(content.rich_text) : '';
+            console.log(`${idTag}${content?.icon?.emoji || icon} ${text}`);
+            continue;
+          }
+          
+          // Handle quote blocks
+          if (type === 'quote') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const text = content?.rich_text ? richTextToPlain(content.rich_text) : '';
+            console.log(`${idTag}> ${text}`);
+            continue;
+          }
+          
+          // Handle toggle blocks (show header, note has children)
+          if (type === 'toggle') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const text = content?.rich_text ? richTextToPlain(content.rich_text) : '';
+            console.log(`${idTag}▸ ${text}`);
+            continue;
+          }
+          
+          // Handle equation blocks
+          if (type === 'equation') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const expr = content?.expression || '';
+            console.log(`${idTag}∑ ${expr}`);
+            continue;
+          }
+          
+          // Handle synced_block
+          if (type === 'synced_block') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const syncedFrom = content?.synced_from?.block_id;
+            if (syncedFrom) {
+              console.log(`${idTag}🔄 (synced from ${syncedFrom.slice(0, 8)}...)`);
+            } else {
+              console.log(`${idTag}🔄 (synced block source)`);
+            }
+            continue;
+          }
+          
+          // Handle column_list (container)
+          if (type === 'column_list') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            console.log(`${idTag}┃ (columns)`);
+            continue;
+          }
+          
+          // Handle column
+          if (type === 'column') {
+            // Columns are children of column_list, usually skip
+            continue;
+          }
+          
+          // Handle link_to_page
+          if (type === 'link_to_page') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const pageId = content?.page_id || content?.database_id || '';
+            console.log(`${idTag}↗️  (link to ${pageId.slice(0, 8)}...)`);
+            continue;
+          }
+          
+          // Handle table_of_contents
+          if (type === 'table_of_contents') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            console.log(`${idTag}📑 (table of contents)`);
+            continue;
+          }
+          
+          // Handle breadcrumb
+          if (type === 'breadcrumb') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            console.log(`${idTag}🍞 (breadcrumb)`);
+            continue;
+          }
+          
+          // Handle unsupported block type (show type name)
+          if (type === 'unsupported') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            console.log(`${idTag}⚠️  (unsupported block type)`);
+            continue;
+          }
+          
           if (content?.rich_text) {
             text = richTextToPlain(content.rich_text);
           } else if (content?.text) {
