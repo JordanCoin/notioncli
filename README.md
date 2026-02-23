@@ -196,6 +196,7 @@ Squat    │ 3    │ 10   │ 135lb
 | `child_page/child_database` | 📄/🗄️ + title |
 | `synced_block` | 🔄 + source reference |
 | `link_to_page` | ↗️ + page reference |
+| `template` | 📋 + button text |
 
 Use `--ids` to show block IDs for editing:
 

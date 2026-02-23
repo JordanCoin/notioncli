@@ -258,6 +258,14 @@ module.exports = {
             continue;
           }
           
+          // Handle template blocks
+          if (type === 'template') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            const text = content?.rich_text ? richTextToPlain(content.rich_text) : '';
+            console.log(`${idTag}📋 ${text || '(template button)'}`);
+            continue;
+          }
+          
           // Handle unsupported block type (show type name)
           if (type === 'unsupported') {
             const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
