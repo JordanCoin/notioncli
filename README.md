@@ -145,6 +145,66 @@ notion export projects --filter "Name=Ship it"
 # Outputs: # Ship it\n\nPage content as markdown...
 ```
 
+### View page blocks
+
+The `blocks` command renders all Notion block types in a readable CLI format:
+
+```
+$ notion blocks projects --filter "Name=Ship it"
+
+# Ship it
+## Overview
+This is the project description.
+---
+• First bullet point
+• Second bullet point
+☑ Completed task
+☐ Pending task
+
+Exercise │ Sets │ Reps │ Weight
+─────────┼──────┼──────┼───────
+Squat    │ 3    │ 10   │ 135lb
+
+> "Ship early, ship often" — Reid Hoffman
+
+💡 Important: Remember to test before deploying.
+🖼️  Architecture diagram
+   https://example.com/diagram.png
+📎 requirements.txt
+📄 Related Docs
+🗄️  Task Database
+```
+
+**Supported block types:**
+
+| Block Type | Rendering |
+|------------|-----------|
+| `paragraph`, `heading_1/2/3` | Text with `#` prefixes |
+| `bulleted_list_item` | `•` bullets |
+| `numbered_list_item` | Numbered |
+| `to_do` | `☑`/`☐` checkboxes |
+| `code` | Fenced code blocks |
+| `divider` | `---` |
+| `table` | Full table with `│` separators |
+| `quote` | `>` prefix |
+| `callout` | Emoji + text |
+| `toggle` | `▸` prefix |
+| `image/video/audio` | 🖼️/🎬/🔊 + caption + URL |
+| `file/pdf` | 📎/📑 + filename |
+| `bookmark/embed` | 🔖/🔗 + URL |
+| `equation` | `∑` + LaTeX |
+| `child_page/child_database` | 📄/🗄️ + title |
+| `synced_block` | 🔄 + source reference |
+| `link_to_page` | ↗️ + page reference |
+
+Use `--ids` to show block IDs for editing:
+
+```bash
+notion blocks projects --filter "Name=Ship it" --ids
+# [a1b2c3d4] # Ship it
+# [e5f6g7h8] ## Overview
+```
+
 ### View page details (relations auto-resolved)
 
 ```
