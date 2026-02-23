@@ -56,6 +56,50 @@ module.exports = {
             continue;
           }
           
+          // Handle table blocks - fetch and render children
+          if (type === 'table') {
+            const idTag = opts.ids ? `[${block.id.slice(0, 8)}] ` : '';
+            try {
+              const { results: tableRows } = await paginate(
+                ({ start_cursor, page_size }) => notion.blocks.children.list({
+                  block_id: block.id,
+                  start_cursor,
+                  page_size,
+                }),
+                { pageSizeLimit: 100 },
+              );
+              
+              const rows = tableRows.map(row => {
+                if (row.type !== 'table_row') return null;
+                return row.table_row.cells.map(cell => 
+                  cell.map(rt => rt.plain_text || '').join('')
+                );
+              }).filter(Boolean);
+              
+              if (rows.length > 0) {
+                // Calculate column widths
+                const colWidths = rows[0].map((_, i) => 
+                  Math.max(...rows.map(r => (r[i] || '').length), 3)
+                );
+                
+                // Render table
+                rows.forEach((row, ri) => {
+                  const line = row.map((cell, i) => cell.padEnd(colWidths[i])).join(' │ ');
+                  console.log(`${idTag}${line}`);
+                  if (ri === 0 && content?.has_column_header) {
+                    console.log(`${opts.ids ? ' '.repeat(10) : ''}${colWidths.map(w => '─'.repeat(w)).join('─┼─')}`);
+                  }
+                });
+                console.log(''); // blank line after table
+              } else {
+                console.log(`${idTag}(empty table)`);
+              }
+            } catch (e) {
+              console.log(`${idTag}📊 (table - use table-read ${block.id} for contents)`);
+            }
+            continue;
+          }
+          
           if (content?.rich_text) {
             text = richTextToPlain(content.rich_text);
           } else if (content?.text) {
